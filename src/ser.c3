@@ -3,13 +3,14 @@ module ser;
 import std::io;
 
 /*
-	In-Memory Header representation:
+	In-Memory representation:
 	[typeid] 8bytes
 	[size_bytes_aligned:padding] 8bytes(4bytes:4bytes)
 	[...body...]: size_bytes_aligned
 */
 
 const DEFAULT_BUFF_CAPACITY = 4096u;
+const DEFAULT_DESER_BUFF_CAPACITY = DEFAULT_BUFF_CAPACITY / 2;
 const TERM = usz.max;
 const ALIGNMENT = uptr.alignof;
 const HEADER_SIZE = usz.sizeof * 2;
@@ -24,17 +25,20 @@ struct Serializer
 	File		file;
 	char[] 	    buff;
 	char[]		deser_buff;
-	usz	    	offset;
+	uint	    offset;
+	uint	    deser_offset;
 }
 
-fn void? Serializer.init(&ser, Allocator alloc, String file_path, usz buff_init_cap = 0)
+fn void? Serializer.init(&ser, Allocator alloc, String file_path, usz buff_init_cap = 0, usz deser_buff_init_cap = 0)
 {
 	buff_init_cap = buff_init_cap == 0 ? DEFAULT_BUFF_CAPACITY : buff_init_cap;
+	deser_buff_init_cap = deser_buff_init_cap == 0 ? DEFAULT_DESER_BUFF_CAPACITY : deser_buff_init_cap;
 	ser.alloc = alloc;
 	ser.file = file::open(file_path, "rub")!;
 	ser.buff = allocator::alloc_array(alloc, char, buff_init_cap);
-	ser.deser_buff = allocator::alloc_array(alloc, char, buff_init_cap);
+	ser.deser_buff = allocator::alloc_array(alloc, char, deser_buff_init_cap);
 	ser.offset = 0;
+	ser.deser_offset = 0;
 }
 
 macro void Serializer.ser(&ser, value)
@@ -44,7 +48,7 @@ macro void Serializer.ser(&ser, value)
 	var $InnerType = get_innermost_type($Type);
 
 	uint req_ser_space = @calc_required_ser_space(value);
-	int extra_space = req_ser_space - (uint)(ser.buff.len - ser.offset);
+	int extra_space = req_ser_space - ((uint)ser.buff.len - ser.offset);
 	if (extra_space > 0) {
 		ser.grow(ser.buff.len + (uint)extra_space);
 	}
@@ -82,21 +86,12 @@ macro void Serializer.ser(&ser, value)
 	ser.offset += req_ser_space;
 }
 
-<*
-	Should be called 2 times: with buff == null, to get a memory requirement,
-	and second time with provided buffer with min buff_size of this memory requirement
-*>
-macro void Serializer.deser(&ser, $Type, char* out_buff, usz* out_buff_size)
+macro Serializer.deser(&ser, $Type)
 {
-	if (out_buff == null) {
-		*out_buff_size = ser.calc_required_deser_space($Type);
-		return;
-	}
-
 	var $InnerType = get_innermost_type($Type);
-
+	
 	char* curr = ser.buff.ptr;
-	usz out_offset = 0;
+	ser.deser_offset = 0;
 
 	while (curr < ser.buff.ptr + ser.offset) {
 		usz stored_typeid = *(usz*)curr;
@@ -112,19 +107,23 @@ macro void Serializer.deser(&ser, $Type, char* out_buff, usz* out_buff_size)
 		uint size = (aligned_size - (*(uint*)(curr + uint.sizeof)));
 		curr += usz.sizeof;
 
-		assert((*out_buff_size - out_offset) >= (usz)size, "Should be enough space in output buffer");
+		if (size > (ser.deser_buff.len - ser.deser_offset)) {
+			ser.grow_deser_buff(ser.deser_buff.len + size);
+		}
 
-		mem::copy((char*)(out_buff + out_offset), curr, size);
-		out_offset += size;
+		mem::copy((ser.deser_buff.ptr + ser.deser_offset), curr, size);
+		ser.deser_offset += size;
 
 		// step through body
 		curr += aligned_size;
 	}
+
+	usz len = ser.deser_offset / $InnerType.sizeof;
+	return bitcast(ser.deser_buff[:ser.deser_offset], $InnerType[])[:len];
 }
 
 // Calculates required space in memory-buffer for data deserialization 
-// that should be provided to the call of 'deser'
-macro usz Serializer.calc_required_deser_space(&ser, $Type) @local
+macro usz Serializer.query_required_deser_space(&ser, $Type)
 {
 	usz res_bytes = 0;
 	char* curr = ser.buff.ptr;
@@ -205,6 +204,18 @@ fn void Serializer.grow(&ser, usz needed_cap) @local
 		new_cap *= 2;
 	}
 	ser.buff = allocator::realloc_array(ser.alloc, ser.buff.ptr, char, new_cap);
+}
+
+<*
+	@require ser.deser_buff.len > 0 : "Should not be zero"
+	@require needed_cap > ser.deser_buff.len : "Should be more than current capacity"
+*>
+fn void Serializer.grow_deser_buff(&ser, usz needed_cap) @local
+{
+	usz new_cap = ser.deser_buff.len * 2;
+	while (new_cap < needed_cap) {
+		new_cap *= 2;
+	}
 	ser.deser_buff = allocator::realloc_array(ser.alloc, ser.deser_buff.ptr, char, new_cap);
 }
 
@@ -222,6 +233,7 @@ fn void Serializer.destroy(&ser)
 {
 	(void)ser.file.close();
 	allocator::free(ser.alloc, ser.buff.ptr);
+	allocator::free(ser.alloc, ser.deser_buff.ptr);
 }
 
 macro char*? @get_heap_object_data_ptr(#val) @local

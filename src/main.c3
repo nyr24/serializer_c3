@@ -4,6 +4,7 @@ import util;
 import std::io;
 import std::math::random;
 import std::collections::elastic_array;
+import std::collections::list;
 
 struct StBig
 {
@@ -20,8 +21,8 @@ alias StackString = ElasticArray{char, 32};
 struct St
 {
 	StackString name;
-	int      age;
-	float    money;
+	int         age;
+	float       money;
 }
 
 fn void St.init(&new, String name, int age, float money)
@@ -55,27 +56,39 @@ fn void StBig.print(&s)
 fn int main(String[] args)
 {
 	Serializer serializer;
-	serializer.init(mem, 2056);
+	serializer.init(mem);
 	defer serializer.destroy();
 
-	if (args.len > 1) {
+	const EXAMPLE_1 = false;
+	const EXAMPLE_LIST = false;
+	const EXAMPLE_DSTRING = true;
+
+	bool should_write = args.len > 1;
+
+	if (EXAMPLE_1) {
+		example_1(&serializer, should_write);
+	}
+
+	if (EXAMPLE_LIST) {
+		example_list(&serializer, should_write);
+	}
+
+	if (EXAMPLE_DSTRING) {
+		example_dstring(&serializer, should_write);
+	}
+
+	return 0;
+}
+
+fn void example_1(Serializer* serializer, bool should_write)
+{
+	if (should_write) {
 		St[3] s_ces1;
 		s_ces1[0].init("hello", 13, 228.5f);
 		s_ces1[1].init("world", 95, 1773.5f);
 		s_ces1[2].init("third", 7785, 56.0631);
 
 		serializer.serialize_to_bin_generic(util::to_byte_slice{St}(s_ces1[..]), "test.txt");
-
-		// StBig[3] s_bigs;
-		// s_bigs[0].init("biggest", 'z', true);
-		// s_bigs[1].init("biggest2", 'w', false);
-		// s_bigs[2].init("biggest3", 'x', true);
-		// serializer.serialize(s_bigs, "test_big.txt", BIN);
-
-		// St[2] s_ces2;
-		// s_ces2[0].init("fourth", 4444, 44.228);
-		// s_ces2[1].init("five", 555, 55.333965);
-		// serializer.serialize(s_ces2, "test2.txt", bin);
 	}
 
 	char[] deser_slice = serializer.deserialize_from_bin_generic("test.txt");
@@ -84,11 +97,41 @@ fn int main(String[] args)
 	foreach (s : st_slice) {
 		s.print();
 	}
+}
 
-	// StBig[] st_big_slice = serializer.deser(StBig);
-	// foreach (s : st_big_slice) {
-	// 	s.print();
-	// }
+fn void example_list(Serializer* serializer, bool should_write)
+{
+	List{int} l_ints;
+	l_ints.tinit(100);
+	defer l_ints.free();
 
-	return 0;
+	for (uint i = 0; i < 50; ++i) {
+		l_ints.push(i);
+	}
+
+	String file_name = "test.list.txt";
+	if (should_write) {
+		serializer.serialize((Serializable)&l_ints, file_name, BIN, tmem);
+	}
+
+	serializer.deserialize((Serializable)&l_ints, file_name, BIN, tmem);
+
+	io::printn(l_ints);
+}
+
+fn void example_dstring(Serializer* serializer, bool should_write)
+{
+	DString dstring;
+	dstring.tinit(100);
+	defer dstring.free();
+
+	dstring.append_string("hello_world");
+
+	String file_name = "test.dstring.txt";
+	if (should_write) {
+		serializer.serialize((Serializable)&dstring, file_name, BIN, tmem);
+	}
+
+	serializer.deserialize((Serializable)&dstring, file_name, BIN, tmem);
+	io::printn(dstring);
 }

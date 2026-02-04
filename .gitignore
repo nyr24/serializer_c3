@@ -1,4 +1,4 @@
 build/
 out/
-test.txt
+test**.txt
 todo.local.md

@@ -32,22 +32,15 @@ struct Serializer
 
 alias SerializationMode = FileOpenMode;
 
-// TODO: choose between interface and contract
 interface Serializable
 {
-	fn char[] serialize_to_bin();
-	fn void   deserialize_from_bin(char[]);
-	fn char[] serialize_to_text();
-	fn void   deserialize_from_text(char[]);
+	fn char[] serialize_to_bin(Allocator alloc);
+	fn void   deserialize_from_bin(char[] ser_data, Allocator alloc);
+	// fn char[] serialize_to_text(Allocator alloc);
+	// fn void   deserialize_from_text(char[]);
 }
 
-macro bool implements_serializable($Type)
-{
-	return $defined($Type.serialize_to_bin) && $defined($Type.serialize_to_text)
-		&& $defined($Type.deserialize_from_bin) && $defined($Type.deserialize_from_text);
-}
-
-fn void Serializer.init(&ser, Allocator alloc, usz buff_init_cap)
+fn void Serializer.init(&ser, Allocator alloc, usz buff_init_cap = 0)
 {
 	ser.alloc = alloc;
 	buff_init_cap = buff_init_cap > 0 ? buff_init_cap : DEFAULT_BUFF_CAPACITY;
@@ -56,17 +49,22 @@ fn void Serializer.init(&ser, Allocator alloc, usz buff_init_cap)
 
 // Serialization
  
-<*
-	@require implements_serializable(Type) : "Type must implement serializable interface"
-*>
-fn void Serializer.serialize(&ser, Type val, String file_path, SerializationMode mode) <Type>
+fn void Serializer.serialize(
+	&ser,
+	Serializable value,
+	String file_path,
+	SerializationMode mode,
+	Allocator alloc
+)
 {
 	if (mode == BIN) {
-		char[] data = val.serialize_to_bin();
+		char[] data = value.serialize_to_bin(alloc);
+		ser.save_data(data, file_path, BIN);
 	} else {
-		char[] data = val.serialize_to_text();
+		unreachable("TODO: text serialization!");
+		// 	char[] data = value.serialize_to_text(alloc);
+		// 	ser.save_data(data, file_path, TEXT);
 	}
-	ser.save_data(data, file_path, mode);
 }
 
 <*
@@ -89,27 +87,31 @@ fn void Serializer.save_data(&ser, char[] serialized_data, String file_path, Fil
 
 // Deserialization
 
-<*
-	@require implements_serializable(Type) : "Type must implement serializable interface"
-*>
-fn char[] Serializer.deserialize(&ser, Type value, String file_path, SerializationMode mode) <Type>
+fn void Serializer.deserialize(
+	&ser,
+	Serializable value,
+	String file_path,
+	SerializationMode mode,
+	Allocator alloc
+)
 {
 	File file = file::open_read(file_path, mode);
 	defer (void)file.close();
 	usz file_len = file.get_len();
 	ser.grow_if_needed(file_len);
-	file.read_all(ser.buff);
+	file.read_all_buff(ser.buff);
 
 	FileHeader header;
 	ser.read_header_from_buff(&header)!!;
 	assert(header.contents_len > 0, "Should have some contents");
 	assert(header.contents_len + FileHeader.sizeof <= file_len, "Should be less or equal to the file size");
-	assert(header.mode == mode, "Serialization mode is not correct");
+	assert((SerializationMode)header.mode == mode, "Serialization mode is not correct");
 
 	if (mode == BIN) {
-		return value.deserialize_from_bin(ser.buff[FileHeader.sizeof : header.contents_len]);
+		value.deserialize_from_bin(ser.buff[FileHeader.sizeof : header.contents_len], alloc);
 	} else {
-		return value.deserialize_from_text(ser.buff[FileHeader.sizeof : header.contents_len]);
+		unreachable("TODO: text serialization");
+		// value.deserialize_from_text(ser.buff[FileHeader.sizeof : header.contents_len], alloc);
 	}
 }
 

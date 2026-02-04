@@ -9,7 +9,7 @@
             "request": "launch",
             "name": "Launch",
             "program": "${workspaceFolder}/build/ser",
-            "args": [],
+            "args": ["1"],
             "cwd": "${workspaceFolder}"
         }
 

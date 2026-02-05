@@ -1,6 +1,6 @@
 ## Binary data serializer implemented in C3 programming language
 
-### Examples
+## Examples
 ```cpp
 
 // Simple stack array

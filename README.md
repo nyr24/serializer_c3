@@ -1,5 +1,11 @@
 ## Binary data serializer implemented in C3 programming language
 
+## Download
+- ssh
+	`git clone --recurse-submodules git@github.com:nyr24/serializer_c3.git`
+- http
+	`git clone --recurse-submodules https://github.com/nyr24/serializer_c3.git`
+
 ## Examples
 ```cpp
 

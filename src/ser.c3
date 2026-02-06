@@ -61,9 +61,15 @@ interface Serializable
 {
 	fn void 	serialize_to_bin(Serializer* ser, Allocator alloc, SerializationMode mode);
 	fn void   	deserialize_from_chunks_bin(ChunkIterator chunk_it, Allocator alloc);
-	fn void   	deserialize_from_data_bin(char[] data, Allocator alloc) @optional;
+	fn void   	deserialize_from_bytes_bin(char[] data, Allocator alloc) @optional;
 	// fn char[] serialize_to_text(Allocator alloc);
 	// fn void   deserialize_from_text(char[]);
+}
+
+macro implements_serializable($Type) @const
+{
+	return $defined($Type.serialize_to_bin) && $defined($Type.deserialize_from_chunks_bin);
+		// && $defined($Type.deserialize_from_bytes_bin);
 }
 
 fn void Serializer.init(&ser, Allocator alloc, usz buff_init_cap = 0)
@@ -76,9 +82,12 @@ fn void Serializer.init(&ser, Allocator alloc, usz buff_init_cap = 0)
 
 // Serialization
  
-fn void Serializer.serialize(
+<*
+	@require implements_serializable(util::@get_pointee_type_val(value)) : "Should implement serializable"
+*>
+macro void Serializer.serialize(
 	&ser,
-	Serializable value,
+	value,
 	Allocator alloc,
 	SerializationMode mode,
 )
@@ -90,9 +99,12 @@ fn void Serializer.serialize(
 	}
 }
 
-fn void Serializer.serialize_and_save_to_file(
+<*
+	@require implements_serializable(util::@get_pointee_type_val(value)) : "Should implement serializable"
+*>
+macro void Serializer.serialize_and_save_to_file(
 	&ser,
-	Serializable value,
+	value,
 	Allocator alloc,
 	SerializationMode mode,
 	String file_path,
@@ -106,28 +118,41 @@ fn void Serializer.serialize_and_save_to_file(
 	}
 }
 
-// Called by 'Serializable' implementations mostly or rarely directly by caller
-fn void Serializer.push_serialized_data(
+<*
+	Expected to be called on objects which are trivial to serialize (don't contain any pointers),
+	Without the need to implement Serializable interface on them,
+	Or from Serializable implementations
+*>
+fn void Serializer.serialize_raw_bytes(
 	&ser,
-	char[] chunk_data,
+	char[] bytes,
 	Allocator alloc,
 	SerializationMode mode,
+	bool should_free,
 )
 {
 	if (mode == BIN) {
 		bool first_chunk = ser.offset == 0;
-		usz req_capacity = ser.calc_required_capacity(chunk_data.len);
+		usz req_capacity = ser.calc_required_capacity(bytes.len);
 		ser.grow_if_needed(req_capacity);
 		if (first_chunk) {
-			ser.write_file_header_to_buff(chunk_data.len, mode);
+			ser.write_file_header_to_buff(bytes.len, mode);
 		}
-		ser.write_serialized_chunk_to_buff(chunk_data);
+		ser.write_serialized_chunk_to_buff(bytes);
+		if (should_free) {
+			allocator::free(alloc, bytes.ptr);
+		}
 	} else {
 		unreachable("TODO: text serialization!");
 	}
 }
 
-fn void Serializer.push_serialized_data_and_save_to_file(
+<*
+	Expected to be called on objects which are trivial to serialize (don't contain any pointers),
+	Without the need to implement Serializable interface on them,
+	Or from Serializable implementations
+*>
+fn void Serializer.serialize_raw_bytes_and_save_to_file(
 	&ser,
 	char[] chunk_data,
 	Allocator alloc,
@@ -159,9 +184,12 @@ fn void Serializer.write_serialized_chunk_to_buff(&ser, char[] serialized_chunk)
 
 // Deserialization
 
-fn void Serializer.deserialize(
+<*
+	@require implements_serializable(util::@get_pointee_type_val(value)) : "Should implement serializable"
+*>
+macro void Serializer.deserialize(
 	&ser,
-	Serializable value,
+	value,
 	Allocator alloc,
 	SerializationMode mode,
 	String file_path,
@@ -191,30 +219,33 @@ fn void Serializer.deserialize(
 }
 
 <*
-	Returns a temporary view to the data, you shoud memcpy it after this call
-	Expects that it was saved with a call to 'serialize_raw_data_to_bin()'
-	NOTE: use this only if storing a single 'chunk' of serialized data
+	Returns a temporary view to the data, you shoud memcpy it after this call,
+	use this only if 'serialize_raw_bytes' was called for serialization
 *>
-fn char[] Serializer.deserialize_raw_data_from_bin(&ser, String file_path)
+fn char[] Serializer.deserialize_raw_bytes(&ser, String file_path, SerializationMode mode)
 {
-	File file = file::open_read(file_path, BIN);
-	defer (void)file.close();
-	usz file_len = file.get_len();
-	ser.grow_if_needed(file_len);
+	if (mode == BIN) {
+		File file = file::open_read(file_path, BIN);
+		defer (void)file.close();
+		usz file_len = file.get_len();
+		ser.grow_if_needed(file_len);
 
-	file.read_all_buff(ser.buff);
-	FileHeader header;
-	read_file_header_from_buff(ser.buff, &header)!!;
-	assert(header.contents_len > 0, "Should have some contents");
-	assert(header.contents_len <= file_len, "Should be less or equal to the file size");
-	assert((SerializationMode)header.mode == BIN, "Serialization mode is not correct");
+		file.read_all_buff(ser.buff);
+		FileHeader header;
+		read_file_header_from_buff(ser.buff, &header)!!;
+		assert(header.contents_len > 0, "Should have some contents");
+		assert(header.contents_len <= file_len, "Should be less or equal to the file size");
+		assert((SerializationMode)header.mode == BIN, "Serialization mode is not correct");
 
-	return ser.buff[FileHeader.sizeof + ChunkHeader.sizeof : header.contents_len];
+		return ser.buff[FileHeader.sizeof + ChunkHeader.sizeof : header.contents_len];
+	} else {
+		unreachable("TODO: text deserialization!");
+	}
 }
 
 fn char[] ChunkIterator.next(&chunk_it)
 {
-	assert(chunk_it.offset < chunk_it.buff_view.len, "Should not happen, because caller controls it fully");
+	assert(chunk_it.offset < chunk_it.buff_view.len, "Where is no chunks anymore in buffer, something went wrong");
 
 	ChunkHeader header;
 	read_chunk_header_and_move_offset(chunk_it.buff_view, &chunk_it.offset, &header);

@@ -1,6 +1,6 @@
 // Implementation of Serializable interface for std collections 
 
-module std::collections::list;
+module std::collections::list <Type>;
 
 import ser;
 
@@ -11,7 +11,7 @@ struct ListSerialized
 	char[*] entries;
 }
 
-fn void List.serialize_to_bin(&list, Serializer* ser, Allocator alloc, SerializationMode mode) @dynamic
+fn void List.serialize_to_bin(&list, Serializer* ser, Allocator alloc, SerializationMode mode)
 {
 	usz entries_byte_size = list.byte_size();
 	usz mem_requirement = usz.sizeof * 2 + entries_byte_size;
@@ -22,10 +22,10 @@ fn void List.serialize_to_bin(&list, Serializer* ser, Allocator alloc, Serializa
 	if (mem_requirement > 0) {
 		mem::copy(&ser_repr.entries, list.entries, entries_byte_size);
 	}
-	ser.push_serialized_data(data, alloc, mode);
+	ser.serialize_raw_bytes(data, alloc, mode, true);
 }
 
-fn void List.deserialize_from_chunks_bin(&list, ChunkIterator chunk_it, Allocator alloc) @dynamic
+fn void List.deserialize_from_chunks_bin(&list, ChunkIterator chunk_it, Allocator alloc)
 {
 	char[] ser_data = chunk_it.next();
 	ListSerialized* ser_repr = (ListSerialized*)ser_data.ptr;
@@ -39,7 +39,7 @@ fn void List.deserialize_from_chunks_bin(&list, ChunkIterator chunk_it, Allocato
 	}
 }
 
-fn void List.deserialize_from_data_bin(&list, char[] ser_data, Allocator alloc) @dynamic
+fn void List.deserialize_from_bytes_bin(&list, char[] ser_data, Allocator alloc)
 {
 	ListSerialized* ser_repr = (ListSerialized*)ser_data.ptr;
 	list.size = ser_repr.size;
@@ -63,7 +63,7 @@ struct DStringSerialized
 	char[*] chars;
 }
 
-fn void DString.serialize_to_bin(&dstring, Serializer* ser, Allocator alloc, SerializationMode mode) @dynamic
+fn void DString.serialize_to_bin(&dstring, Serializer* ser, Allocator alloc, SerializationMode mode)
 {
 	usz cap = dstring.capacity();
 	StringData* str_data = dstring.data();
@@ -76,10 +76,10 @@ fn void DString.serialize_to_bin(&dstring, Serializer* ser, Allocator alloc, Ser
 	if (mem_requirement > 0) {
 		mem::copy(&ser_repr.chars, &str_data.chars, str_data.len);
 	}
-	ser.push_serialized_data(ser_data, alloc, mode);
+	ser.serialize_raw_bytes(ser_data, alloc, mode, true);
 }
 
-fn void DString.deserialize_from_chunks_bin(&dstring, ChunkIterator chunk_it, Allocator alloc) @dynamic
+fn void DString.deserialize_from_chunks_bin(&dstring, ChunkIterator chunk_it, Allocator alloc)
 {
 	char[] ser_data = chunk_it.next();
 	DStringSerialized* ser_repr = (DStringSerialized*)ser_data.ptr;
@@ -93,7 +93,7 @@ fn void DString.deserialize_from_chunks_bin(&dstring, ChunkIterator chunk_it, Al
 	*dstring = (DString)data;
 }
 
-fn void DString.deserialize_from_data_bin(&dstring, char[] ser_data, Allocator alloc) @dynamic
+fn void DString.deserialize_from_bytes_bin(&dstring, char[] ser_data, Allocator alloc)
 {
 	DStringSerialized* ser_repr = (DStringSerialized*)ser_data.ptr;
 	StringData* data = allocator::alloc_with_padding(alloc, StringData, ser_repr.capacity)!!;
@@ -104,4 +104,46 @@ fn void DString.deserialize_from_data_bin(&dstring, char[] ser_data, Allocator a
 		mem::copy(&data.chars, &ser_repr.chars, ser_repr.len);
 	}
 	*dstring = (DString)data;
+}
+
+module std::collections::map <Key, Value>;
+
+import ser;
+import util;
+
+struct HashMapSerialized
+{
+	uint    	count;
+	uint    	threshold;
+	float   	load_factor;
+}
+
+fn void HashMap.serialize_to_bin(&map, Serializer* ser, Allocator alloc, SerializationMode mode)
+{
+	Key[] keys = map.keys(alloc);
+	Value[] values = map.values(alloc);
+	char[] ser_data = allocator::alloc_array(alloc, char, HashMapSerialized.sizeof);
+	HashMapSerialized* ser_map = (HashMapSerialized*)ser_data.ptr;
+	ser_map.count = map.count;
+	ser_map.threshold = map.threshold;
+	ser_map.load_factor = map.load_factor;
+	ser.serialize_raw_bytes(ser_data, alloc, mode, true);
+	ser.serialize_raw_bytes(util::to_byte_slice{Key}(keys), alloc, mode, true);
+	ser.serialize_raw_bytes(util::to_byte_slice{Value}(values), alloc, mode, true);
+}
+
+fn void HashMap.deserialize_from_chunks_bin(&map, ChunkIterator chunk_it, Allocator alloc)
+{
+	HashMapSerialized* ser_map = (HashMapSerialized*)chunk_it.next().ptr;
+	map.allocator = alloc;
+	map.load_factor = ser_map.load_factor;
+	map.threshold = ser_map.threshold;
+	map.table = allocator::new_array(alloc, void*, ser_map.count);
+
+	Key[] keys = util::from_byte_slice{Key}(chunk_it.next());
+	Value[] values = util::from_byte_slice{Value}(chunk_it.next());
+	assert(keys.len == values.len, "Should be equal");
+	for (uint i; i < keys.len; ++i) {
+		map.set(keys[i], values[i]);
+	}
 }

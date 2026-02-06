@@ -2,9 +2,9 @@
 
 ## Download
 - ssh
-	`git clone --recurse-submodules git@github.com:nyr24/serializer_c3.git`
+	`git clone git@github.com:nyr24/serializer_c3.git`
 - http
-	`git clone --recurse-submodules https://github.com/nyr24/serializer_c3.git`
+	`git clone https://github.com/nyr24/serializer_c3.git`
 
 ## Examples
 ```cpp

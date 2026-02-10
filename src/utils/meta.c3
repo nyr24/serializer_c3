@@ -17,6 +17,11 @@ macro bool is_kindof($Type, TypeKind... $kinds) @const
 	return false;
 }
 
+macro bool @is_kindof_val(#val, TypeKind... $kinds) @const
+{
+	return is_kindof($typeof(#val), ...$kinds);
+}
+
 macro unwrap_if_distinct_or_ptr_type($Type) @const
 {
 	$if $Type.kindof == DISTINCT || $Type.kindof == POINTER:

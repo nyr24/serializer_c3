@@ -18,12 +18,13 @@ import std::math;
 	[..contents:padding..]
 */
 
-const usz FILE_FORMAT_ID        @private = 0x123456789abcdeff;
+const usz FILE_FORMAT_ID_BIN    @private = 0x123456789abcdeff;
+const usz FILE_FORMAT_ID_TXT    @private = 0x123456789abcdeaa;
 const usz CHUNK_ID              @private = 0xffedcba987654321;
 const usz DEFAULT_BUFF_CAPACITY @private = 4096u;
 const usz ALIGNMENT             @private = uptr.alignof;
-const String BIN_EXT			= ".c3fmt_bin";
-const String TEXT_EXT			= ".c3fmt_txt";
+const String BIN_EXT			= ".bin";
+const String TEXT_EXT			= ".txt";
 
 faultdef
 	NOT_PROPER_FILE_FORMAT;
@@ -50,72 +51,79 @@ struct ChunkIterator
 
 struct Serializer
 {
+	DString 	buff;
 	Allocator	alloc;
-	char[] 	    buff;
-	usz			offset;
+	Formatter	formatter;
+	Parser		parser;
 }
 
 alias SerializationMode = FileOpenMode;
 
-interface Serializable
-{
-	fn void 	serialize_to_bin(Serializer* ser, Allocator alloc, SerializationMode mode);
-	fn void   	deserialize_from_chunks_bin(ChunkIterator chunk_it, Allocator alloc);
-	fn void   	deserialize_from_bytes_bin(char[] data, Allocator alloc) @optional;
-	// fn char[] serialize_to_text(Allocator alloc);
-	// fn void   deserialize_from_text(char[]);
-}
+// No runtime dispatch because of religious views
+// code gen forever, compile times also forever
+	// interface Serializable
+	// {
+	// 	fn void 	serialize_to_bin(Serializer* ser, Allocator alloc, SerializationMode mode);
+	// 	fn void   	deserialize_from_chunks_bin(ChunkIterator chunk_it, Allocator alloc);
+	// 	fn void   	deserialize_from_bytes_bin(char[] data, Allocator alloc) @optional;
+		// fn char[] serialize_to_text(Allocator alloc);
+		// fn void   deserialize_from_text(char[]);
+	// }
 
-macro implements_serializable($Type) @const
+macro implements_serializable_to_bin($Type) @const
 {
 	return $defined($Type.serialize_to_bin) && $defined($Type.deserialize_from_chunks_bin);
-		// && $defined($Type.deserialize_from_bytes_bin);
+}
+
+macro implements_serializable_to_text($Type) @const
+{
+	return $defined($Type.serialize_to_text) && $defined($Type.deserialize_from_text);
+}
+
+macro deserializable_from_chunks_bin($Type) @const
+{
+	return $defined($Type.deserialize_from_chunks_bin);
+}
+
+macro deserializable_from_bytes_bin($Type) @const
+{
+	return $defined($Type.deserialize_from_bytes_bin);
 }
 
 fn void Serializer.init(&ser, Allocator alloc, usz buff_init_cap = 0)
 {
 	ser.alloc = alloc;
 	buff_init_cap = buff_init_cap > 0 ? buff_init_cap : DEFAULT_BUFF_CAPACITY;
-	ser.buff = allocator::alloc_array(alloc, char, buff_init_cap);
-	ser.offset = 0;
+	ser.buff.init(alloc, buff_init_cap);
+	ser.formatter.init(&formatter_output_fn, ser);
 }
 
-// Serialization
+// Serialization Bin
  
 <*
-	@require implements_serializable(util::@get_pointee_type_val(value)) : "Should implement serializable"
+	@require implements_serializable_to_bin(util::@get_pointee_type_val(val)) : "Should implement serializable to binary"
 *>
-macro void Serializer.serialize(
+macro void Serializer.serialize_to_bin(
 	&ser,
-	value,
+	val,
 	Allocator alloc,
-	SerializationMode mode,
 )
 {
-	if (mode == BIN) {
-		value.serialize_to_bin(ser, alloc, mode);
-	} else {
-		unreachable("TODO: text serialization!");
-	}
+	val.serialize_to_bin(ser, alloc);
 }
 
 <*
-	@require implements_serializable(util::@get_pointee_type_val(value)) : "Should implement serializable"
+	@require implements_serializable_to_bin(util::@get_pointee_type_val(val)) : "Should implement serializable to binary"
 *>
-macro void Serializer.serialize_and_save_to_file(
+macro void Serializer.serialize_to_bin_and_save_to_file(
 	&ser,
-	value,
+	val,
 	Allocator alloc,
-	SerializationMode mode,
 	String file_path,
 )
 {
-	if (mode == BIN) {
-		value.serialize_to_bin(ser, alloc, mode);
-		ser.save_serialized_data_to_file(file_path, mode);
-	} else {
-		unreachable("TODO: text serialization!");
-	}
+	val.serialize_to_bin(ser, alloc);
+	ser.save_serialized_data_to_file(file_path, BIN);
 }
 
 <*
@@ -123,27 +131,22 @@ macro void Serializer.serialize_and_save_to_file(
 	Without the need to implement Serializable interface on them,
 	Or from Serializable implementations
 *>
-fn void Serializer.serialize_raw_bytes(
+fn void Serializer.serialize_to_bin_trivial(
 	&ser,
 	char[] bytes,
 	Allocator alloc,
-	SerializationMode mode,
 	bool should_free,
 )
 {
-	if (mode == BIN) {
-		bool first_chunk = ser.offset == 0;
-		usz req_capacity = ser.calc_required_capacity(bytes.len);
-		ser.grow_if_needed(req_capacity);
-		if (first_chunk) {
-			ser.write_file_header_to_buff(bytes.len, mode);
-		}
-		ser.write_serialized_chunk_to_buff(bytes);
-		if (should_free) {
-			allocator::free(alloc, bytes.ptr);
-		}
-	} else {
-		unreachable("TODO: text serialization!");
+	bool first_chunk = ser.buff.len() == 0;
+	usz req_capacity = ser.calc_required_capacity_bin(bytes.len);
+	ser.buff.reserve(req_capacity);
+	if (first_chunk) {
+		ser.write_file_header_to_buff(bytes.len, BIN);
+	}
+	ser.write_serialized_chunk_to_buff(bytes);
+	if (should_free) {
+		allocator::free(alloc, bytes.ptr);
 	}
 }
 
@@ -152,95 +155,47 @@ fn void Serializer.serialize_raw_bytes(
 	Without the need to implement Serializable interface on them,
 	Or from Serializable implementations
 *>
-fn void Serializer.serialize_raw_bytes_and_save_to_file(
+fn void Serializer.serialize_to_bin_trivial_and_save_to_file(
 	&ser,
-	char[] chunk_data,
+	char[] bytes,
 	Allocator alloc,
-	SerializationMode mode,
+	bool should_free,
 	String file_path,
 )
 {
-	if (mode == BIN) {
-		bool first_chunk = ser.offset == 0;
-		usz req_capacity = ser.calc_required_capacity(chunk_data.len);
-		ser.grow_if_needed(req_capacity);
-		if (first_chunk) {
-			ser.write_file_header_to_buff(chunk_data.len, mode);
-		}
-		ser.write_serialized_chunk_to_buff(chunk_data);
-		ser.save_serialized_data_to_file(file_path, mode);
-	} else {
-		unreachable("TODO: text serialization!");
-	}
+	ser.serialize_to_bin_trivial(bytes, alloc, should_free);
+	ser.save_serialized_data_to_file(file_path, BIN);
 }
 
-fn void Serializer.write_serialized_chunk_to_buff(&ser, char[] serialized_chunk) @private
-{
-	usz aligned_chunk_size = ser.write_chunk_header(serialized_chunk.len);
-	mem::copy(ser.buff.ptr + ser.offset, serialized_chunk.ptr, serialized_chunk.len);
-	ser.offset += aligned_chunk_size;
-	ser.update_file_contents_len_with_curr_offset();
-}
-
-// Deserialization
+// Deserialization Bin
 
 <*
-	@require implements_serializable(util::@get_pointee_type_val(value)) : "Should implement serializable"
+	@require implements_serializable_to_bin(util::@get_pointee_type_val(val)) : "Should implement serializable to binary"
 *>
-macro void Serializer.deserialize(
+macro void Serializer.deserialize_from_bin(
 	&ser,
-	value,
+	val,
 	Allocator alloc,
-	SerializationMode mode,
 	String file_path,
 )
 {
-	File file = file::open_read(file_path, mode);
-	defer (void)file.close();
-	usz file_len = file.get_len();
-	ser.grow_if_needed(file_len);
-	file.read_all_buff(ser.buff);
-
-	FileHeader header;
-	read_file_header_from_buff(ser.buff, &header)!!;
-	assert(header.contents_len > 0, "Should have some contents");
-	assert(header.contents_len <= file_len, "Should be less or equal to the file size");
-	assert((SerializationMode)header.mode == mode, "Serialization mode is not correct");
-
+	usz contents_len = ser.read_file_into_buffer(BIN, file_path);
+	
 	ChunkIterator chunk_it;
-	chunk_it.buff_view = ser.buff[:FileHeader.sizeof + header.contents_len];
+	chunk_it.buff_view = ser.buff.view_range_len(0, FileHeader.sizeof + contents_len);
 	chunk_it.offset = FileHeader.sizeof;
 
-	if (mode == BIN) {
-		value.deserialize_from_chunks_bin(chunk_it, alloc);
-	} else {
-		unreachable("TODO: text serialization");
-	}
+	val.deserialize_from_chunks_bin(chunk_it, alloc);
 }
 
 <*
 	Returns a temporary view to the data, you shoud memcpy it after this call,
-	use this only if 'serialize_raw_bytes' was called for serialization
+	use this only if 'serialize_to_bin_trivial' was called for serialization
 *>
-fn char[] Serializer.deserialize_raw_bytes(&ser, String file_path, SerializationMode mode)
+fn char[] Serializer.deserialize_from_bin_trivial(&ser, String file_path)
 {
-	if (mode == BIN) {
-		File file = file::open_read(file_path, BIN);
-		defer (void)file.close();
-		usz file_len = file.get_len();
-		ser.grow_if_needed(file_len);
-
-		file.read_all_buff(ser.buff);
-		FileHeader header;
-		read_file_header_from_buff(ser.buff, &header)!!;
-		assert(header.contents_len > 0, "Should have some contents");
-		assert(header.contents_len <= file_len, "Should be less or equal to the file size");
-		assert((SerializationMode)header.mode == BIN, "Serialization mode is not correct");
-
-		return ser.buff[FileHeader.sizeof + ChunkHeader.sizeof : header.contents_len];
-	} else {
-		unreachable("TODO: text deserialization!");
-	}
+	usz contents_len = ser.read_file_into_buffer(BIN, file_path);
+	return ser.buff.view_range_len(FileHeader.sizeof + ChunkHeader.sizeof, contents_len);
 }
 
 fn char[] ChunkIterator.next(&chunk_it)
@@ -255,7 +210,78 @@ fn char[] ChunkIterator.next(&chunk_it)
 	return chunk_data;
 }
 
-// Headers
+fn void Serializer.write_serialized_chunk_to_buff(&ser, char[] serialized_chunk) @private
+{
+	usz aligned_chunk_size = ser.write_chunk_header(serialized_chunk.len);
+	ser.buff.append_string((String)serialized_chunk);
+	ser.update_file_contents_len_with_curr_offset();
+}
+
+// Serialization Text
+
+macro void Serializer.serialize_to_text_trivial(
+	&ser,
+	val,
+	Allocator alloc,
+	usz assumed_data_size = 0,
+)
+{
+	assumed_data_size = math::max($sizeof(val), assumed_data_size);
+	usz assumed_req_capacity = ser.calc_required_capacity_text(assumed_data_size);
+	ser.buff.reserve(assumed_req_capacity);
+	ser.write_file_header_to_buff(0, TEXT);
+	ser.formatter.format_any(val, true, 0, true);
+	ser.update_file_contents_len_with_curr_offset();
+}
+
+macro void Serializer.serialize_to_text_trivial_and_save_to_file(
+	&ser,
+	val,
+	Allocator alloc,
+	String file_path,
+	usz assumed_data_size = 0,
+)
+{
+	ser.serialize_to_text_trivial(val, alloc, assumed_data_size);
+	ser.save_serialized_data_to_file(file_path, TEXT);
+}
+
+// Deserialization Text
+
+<*
+	@require util::is_kindof($typeof(val), POINTER, SLICE) : "Should be a pointer or slice"
+*>
+macro void Serializer.deserialize_from_text_trivial(
+	&ser,
+	val,
+	Allocator alloc,
+	String file_path,
+)
+{
+	usz contents_len = ser.read_file_into_buffer(TEXT, file_path);
+	ser.parser.init(ser.buff.view_range_len(FileHeader.sizeof, contents_len));
+	ser.parser.start(val);
+}
+
+// Utils
+
+fn usz Serializer.read_file_into_buffer(&ser, SerializationMode mode, String file_path) @private
+{
+	File file = file::open_read(file_path, mode);
+	defer (void)file.close();
+	usz file_len = file.get_len();
+	ser.buff.reserve(file_len);
+	ser.buff.resize(file_len);
+
+	file.read_all_buff(ser.buff.str_view());
+	FileHeader header;
+	read_file_header_from_buff(ser.buff.str_view(), &header)!!;
+	assert(header.contents_len > 0, "Should have some contents");
+	assert(header.contents_len <= file_len, "Should be less or equal to the file size");
+	assert((SerializationMode)header.mode == mode, "Serialization mode is not correct");
+	return header.contents_len;
+}
+ 
 <*
 	Returns stored the length of file at time of last write
 	(actual length of the file can be different)
@@ -264,7 +290,7 @@ fn char[] ChunkIterator.next(&chunk_it)
 fn void? read_file_header_from_buff(char[] buff, FileHeader* out_header) @private
 {
 	FileHeader* header = (FileHeader*)buff.ptr;
-	if (header.format_id != FILE_FORMAT_ID) {
+	if (header.format_id != FILE_FORMAT_ID_BIN && header.format_id != FILE_FORMAT_ID_TXT) {
 		return NOT_PROPER_FILE_FORMAT~;
 	}
 	*out_header = *header;
@@ -272,11 +298,12 @@ fn void? read_file_header_from_buff(char[] buff, FileHeader* out_header) @privat
 
 fn void Serializer.write_file_header_to_buff(&ser, usz contents_len, SerializationMode mode) @private
 {
-	FileHeader* header = (FileHeader*)ser.buff.ptr;
-	header.format_id = FILE_FORMAT_ID;
+	FileHeader header;
+	header.format_id = mode == BIN ? FILE_FORMAT_ID_BIN : FILE_FORMAT_ID_TXT;
 	header.contents_len = (uint)contents_len;
 	header.mode = (uint)mode;
-	ser.offset = FileHeader.sizeof;
+	char[] header_as_bytes = util::ptr_to_byte_slice{FileHeader}(&header);
+	ser.buff.append_string((String)header_as_bytes);
 }
 
 <*
@@ -284,11 +311,12 @@ fn void Serializer.write_file_header_to_buff(&ser, usz contents_len, Serializati
 *>
 fn usz Serializer.write_chunk_header(&ser, usz chunk_size) @private
 {
-	ChunkHeader* header = (ChunkHeader*)(ser.buff.ptr + ser.offset);
+	ChunkHeader header;
 	header.chunk_id = CHUNK_ID;
 	header.aligned_size = (uint)mem::aligned_offset(chunk_size, ALIGNMENT);
 	header.padding = header.aligned_size - (uint)chunk_size;
-	ser.offset += ChunkHeader.sizeof;
+	char[] header_as_bytes = util::ptr_to_byte_slice{ChunkHeader}(&header);
+	ser.buff.append_string((String)header_as_bytes);
 	return header.aligned_size;
 }
 
@@ -305,46 +333,33 @@ fn void read_chunk_header_and_move_offset(char[] buff, usz* offset, ChunkHeader*
 
 fn void Serializer.update_file_contents_len_with_curr_offset(&ser) @private
 {
-	FileHeader* file_header = (FileHeader*)ser.buff.ptr;
-	file_header.contents_len = (uint)ser.offset - FileHeader.sizeof;
+	FileHeader* file_header = (FileHeader*)&ser.buff[0];
+	file_header.contents_len = (uint)ser.buff.len() - FileHeader.sizeof;
 }
 
 fn void Serializer.save_serialized_data_to_file(&ser, String file_path, FileOpenMode mode)
 {
-	assert(ser.offset > 0, "Should have some data in buffer");
+	assert(ser.buff.len() > 0, "Should have some data in buffer");
 
 	File file = file::open_write(file_path, mode);
 	defer (void)file.close();
-	file.write_all(ser.buff[:ser.offset]);
-	ser.offset = 0;
+	file.write_all(ser.buff.str_view());
+	ser.buff.clear();
 }
 
-<*
-	@require ser.buff.len > 0 : "Should not be zero"
-	@param add_cap : "Size of the data that needs be added to the buffer"
-*>
-fn void Serializer.grow_if_needed(&ser, usz add_cap) @private
+fn usz Serializer.calc_required_capacity_bin(&ser, usz data_len) @private
 {
-	usz curr_cap = ser.buff.len;
-	if (add_cap <= curr_cap) {
-		return;
-	}
-
-	usz need_cap = add_cap - curr_cap;
-	usz new_cap = curr_cap * 2;
-	while (new_cap < (curr_cap + need_cap)) {
-		new_cap *= 2;
-	}
-	ser.buff = allocator::realloc_array(ser.alloc, ser.buff.ptr, char, new_cap);
-}
-
-fn usz Serializer.calc_required_capacity(&ser, usz data_len) @private
-{
-	bool first_chunk = ser.offset == 0;
+	bool first_chunk = ser.buff.len() == 0;
 	usz aligned_len = mem::aligned_offset(data_len, ALIGNMENT);
 	return first_chunk
 		? aligned_len + FileHeader.sizeof + ChunkHeader.sizeof
 		: aligned_len + ChunkHeader.sizeof;
+}
+
+fn usz Serializer.calc_required_capacity_text(&ser, usz data_len) @private
+{
+	usz aligned_len = mem::aligned_offset(data_len, ALIGNMENT);
+	return aligned_len + FileHeader.sizeof;
 }
 
 macro String acquire_file_fmt_name(String $base_name, SerializationMode mode)
@@ -358,5 +373,11 @@ macro String acquire_file_fmt_name(String $base_name, SerializationMode mode)
 
 fn void Serializer.destroy(&ser)
 {
-	allocator::free(ser.alloc, ser.buff.ptr);
+	ser.buff.free();
+}
+
+fn void? formatter_output_fn(void* data, char c) @local
+{
+	Serializer* ser = data;
+	ser.buff.append_char(c);
 }

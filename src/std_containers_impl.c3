@@ -11,7 +11,7 @@ struct ListSerialized
 	char[*] entries;
 }
 
-fn void List.serialize_to_bin(&list, Serializer* ser, Allocator alloc, SerializationMode mode)
+fn void List.serialize_to_bin(&list, Serializer* ser, Allocator alloc)
 {
 	usz entries_byte_size = list.byte_size();
 	usz mem_requirement = usz.sizeof * 2 + entries_byte_size;
@@ -22,7 +22,7 @@ fn void List.serialize_to_bin(&list, Serializer* ser, Allocator alloc, Serializa
 	if (mem_requirement > 0) {
 		mem::copy(&ser_repr.entries, list.entries, entries_byte_size);
 	}
-	ser.serialize_raw_bytes(data, alloc, mode, true);
+	ser.serialize_to_bin_trivial(data, alloc, true);
 }
 
 fn void List.deserialize_from_chunks_bin(&list, ChunkIterator chunk_it, Allocator alloc)
@@ -63,7 +63,7 @@ struct DStringSerialized
 	char[*] chars;
 }
 
-fn void DString.serialize_to_bin(&dstring, Serializer* ser, Allocator alloc, SerializationMode mode)
+fn void DString.serialize_to_bin(&dstring, Serializer* ser, Allocator alloc)
 {
 	usz cap = dstring.capacity();
 	StringData* str_data = dstring.data();
@@ -76,7 +76,7 @@ fn void DString.serialize_to_bin(&dstring, Serializer* ser, Allocator alloc, Ser
 	if (mem_requirement > 0) {
 		mem::copy(&ser_repr.chars, &str_data.chars, str_data.len);
 	}
-	ser.serialize_raw_bytes(ser_data, alloc, mode, true);
+	ser.serialize_to_bin_trivial(ser_data, alloc, true);
 }
 
 fn void DString.deserialize_from_chunks_bin(&dstring, ChunkIterator chunk_it, Allocator alloc)
@@ -118,7 +118,7 @@ struct HashMapSerialized
 	float   	load_factor;
 }
 
-fn void HashMap.serialize_to_bin(&map, Serializer* ser, Allocator alloc, SerializationMode mode)
+fn void HashMap.serialize_to_bin(&map, Serializer* ser, Allocator alloc)
 {
 	Key[] keys = map.keys(alloc);
 	Value[] values = map.values(alloc);
@@ -127,9 +127,9 @@ fn void HashMap.serialize_to_bin(&map, Serializer* ser, Allocator alloc, Seriali
 	ser_map.count = map.count;
 	ser_map.threshold = map.threshold;
 	ser_map.load_factor = map.load_factor;
-	ser.serialize_raw_bytes(ser_data, alloc, mode, true);
-	ser.serialize_raw_bytes(util::to_byte_slice{Key}(keys), alloc, mode, true);
-	ser.serialize_raw_bytes(util::to_byte_slice{Value}(values), alloc, mode, true);
+	ser.serialize_to_bin_trivial(ser_data, alloc, true);
+	ser.serialize_to_bin_trivial(util::to_byte_slice{Key}(keys), alloc, true);
+	ser.serialize_to_bin_trivial(util::to_byte_slice{Value}(values), alloc, true);
 }
 
 fn void HashMap.deserialize_from_chunks_bin(&map, ChunkIterator chunk_it, Allocator alloc)

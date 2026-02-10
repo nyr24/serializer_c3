@@ -9,12 +9,23 @@ import std::collections::map;
 
 alias StackString = ElasticArray{char, 32};
 
+typedef MyString @tag(FMT_PLAIN_STRING_TAG, 1) = char[5];
+
+// struct MyString @tag(FMT_STRING_TAG, 1)
+// {
+// 	char[5] val;
+// }
+
 struct St
 {
-	StackString name;
+	// MyString	name;
+	// char[5]		name;
+	ElasticArray{char, 5} name;
 	int         age;
 	float       money;
 }
+
+typedef StDistinct = St;
 
 struct Entity
 {
@@ -39,10 +50,11 @@ fn int main(String[] args)
 	serializer.init(mem);
 	defer serializer.destroy();
 
-	const EXAMPLE_SIMPLE = true;
-	const EXAMPLE_LIST = true;
-	const EXAMPLE_DSTRING = true;
-	const EXAMPLE_ENTITY = true;
+	const EXAMPLE_SIMPLE = false;
+	const EXAMPLE_LIST = false;
+	const EXAMPLE_DSTRING = false;
+	const EXAMPLE_ENTITY = false;
+	const EXAMPLE_TEXT_SIMPLE = true;
 
 	bool should_write = args.len > 1;
 
@@ -62,10 +74,47 @@ fn int main(String[] args)
 		example_entity(&serializer, should_write);
 	}
 
+	if (EXAMPLE_TEXT_SIMPLE) {
+		example_text_simple(&serializer, should_write);
+	}
+
 	return 0;
 }
 
 // Examples
+
+fn void St.init(&new, char[5]* name, int age, float money)
+{
+	mem::copy(&new.name.entries, name, name.len);
+	new.name.resize(name.len);
+	new.age = age;
+	new.money = money;
+}
+
+fn void St.print(&s)
+{
+	io::printfn("St: %s %d %f", (String)s.name.entries[..], s.age, s.money);
+}
+
+fn void example_text_simple(Serializer* serializer, bool should_write)
+{
+	String f_name = ser::acquire_file_fmt_name("test.simple", TEXT);
+
+	St[3] s_ces1;
+	if (should_write) {
+		s_ces1[0].init("hello", 8, 16.0f);
+		s_ces1[1].init("world", 16, 32.0f);
+		s_ces1[2].init("third", 32, 64.0f);
+
+		serializer.serialize_to_text_trivial_and_save_to_file(s_ces1[..], tmem, f_name);
+	}
+
+	serializer.deserialize_from_text_trivial(s_ces1[..], tmem, f_name);
+
+	foreach (s : s_ces1[..]) {
+		s.print();
+	}
+}
 
 fn void example_simple(Serializer* serializer, bool should_write)
 {
@@ -77,10 +126,10 @@ fn void example_simple(Serializer* serializer, bool should_write)
 		s_ces1[1].init("world", 95, 1773.5f);
 		s_ces1[2].init("third", 7785, 56.0631);
 
-		serializer.serialize_raw_bytes_and_save_to_file(util::to_byte_slice{St}(s_ces1[..]), tmem, BIN, f_name);
+		serializer.serialize_to_bin_trivial_and_save_to_file(util::to_byte_slice{St}(s_ces1[..]), tmem, false, f_name);
 	}
 
-	char[] deser_slice = serializer.deserialize_raw_bytes(f_name, BIN);
+	char[] deser_slice = serializer.deserialize_from_bin_trivial(f_name);
 	St[] st_slice = util::from_byte_slice{St}(deser_slice);
 
 	foreach (s : st_slice) {
@@ -100,10 +149,10 @@ fn void example_list(Serializer* serializer, bool should_write)
 
 	String f_name = ser::acquire_file_fmt_name("test.list", BIN);
 	if (should_write) {
-		serializer.serialize_and_save_to_file(&l_ints, tmem, BIN, f_name);
+		serializer.serialize_to_bin_and_save_to_file(&l_ints, tmem, f_name);
 	}
 
-	serializer.deserialize(&l_ints, tmem, BIN, f_name);
+	serializer.deserialize_from_bin(&l_ints, tmem, f_name);
 
 	io::printn(l_ints);
 }
@@ -118,11 +167,11 @@ fn void example_dstring(Serializer* serializer, bool should_write)
 
 	String f_name = ser::acquire_file_fmt_name("test.dstring", BIN);
 	if (should_write) {
-		serializer.serialize(&dstring, tmem, BIN);
+		serializer.serialize_to_bin(&dstring, tmem);
 		serializer.save_serialized_data_to_file(f_name, BIN);
 	}
 
-	serializer.deserialize(&dstring, tmem, BIN, f_name);
+	serializer.deserialize_from_bin(&dstring, tmem, f_name);
 	io::printn(dstring);
 }
 
@@ -135,27 +184,14 @@ fn void example_entity(Serializer* serializer, bool should_write)
 		int[*] textures = {1,2,3,4,5};
 		en.init("Vasya", 13, 666.77, textures[..], "Gamburger Builder", tmem);
 
-		serializer.serialize_and_save_to_file(&en, tmem, BIN, f_name);
+		serializer.serialize_to_bin_and_save_to_file(&en, tmem, f_name);
 	}
 
-	serializer.deserialize(&en, tmem, BIN, f_name);
+	serializer.deserialize_from_bin(&en, tmem, f_name);
 	en.print();
 }
 
 // Implementation
-
-fn void St.init(&new, String name, int age, float money)
-{
-	mem::copy(new.name.data(), name.ptr, name.len);
-	new.name.size = name.len;
-	new.age = age;
-	new.money = money;
-}
-
-fn void St.print(&s)
-{
-	io::printfn("St: %s %d %f", (String)s.name.array_view(), s.age, s.money);
-}
 
 fn void Entity.init(&entity, String name, int age, double money, int[] textures, String job_name, Allocator alloc = mem)
 {
@@ -182,9 +218,9 @@ fn void Entity.print(&en)
 }
 
 // Serializable interface implementation for Entity struct
-// chunked serialization - 1. stack part; 2. dynamic list; 3. dynamic string;
+// chunked serialization - 1. stack part; 2. list (heap); 3. dstring (heap); 4. hashmap (heap);
 
-fn void Entity.serialize_to_bin(&entity, Serializer* ser, Allocator alloc, SerializationMode mode) @dynamic
+fn void Entity.serialize_to_bin(&entity, Serializer* ser, Allocator alloc) @dynamic
 {
 	EntityStackPart stack_p;
 	stack_p.name = entity.name;
@@ -192,10 +228,10 @@ fn void Entity.serialize_to_bin(&entity, Serializer* ser, Allocator alloc, Seria
 	stack_p.money = entity.money;
 	char[] stack_p_slice = util::ptr_to_byte_slice{EntityStackPart}(&stack_p);
 	
-	ser.serialize_raw_bytes(stack_p_slice, alloc, mode, false);
-	ser.serialize(&entity.textures, alloc, mode);
-	ser.serialize(&entity.job_name, alloc, mode);
-	ser.serialize(&entity.map, alloc, mode);
+	ser.serialize_to_bin_trivial(stack_p_slice, alloc, false);
+	ser.serialize_to_bin(&entity.textures, alloc);
+	ser.serialize_to_bin(&entity.job_name, alloc);
+	ser.serialize_to_bin(&entity.map, alloc);
 }
 
 fn void Entity.deserialize_from_chunks_bin(&entity, ChunkIterator chunk_it, Allocator alloc) @dynamic

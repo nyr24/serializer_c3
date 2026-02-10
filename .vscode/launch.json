@@ -8,7 +8,7 @@
             "type": "lldb",
             "request": "launch",
             "name": "Launch",
-            "program": "${workspaceFolder}/build/ser",
+            "program": "${workspaceFolder}/build/ser_test",
             "args": ["1"],
             "cwd": "${workspaceFolder}"
         }

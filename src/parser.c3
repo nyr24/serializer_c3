@@ -3,29 +3,23 @@ module ser;
 import libc;
 import std::collections::elastic_array;
 import util;
+import std::math;
+// NOTE: DEBUG
+// import std::io;
 
-const MAX_STR_LEN = 64;
+const MAX_STR_LEN   = 64;
 const MAX_DIGIT_LEN = 32;
-const char[*] FORMAT_TOKEN_CHARSET = {'[', ']', '{', '}', ';'};
-alias SkipCallback = fn bool(char);
-
-/* TODO:
-	1. handle DISTINCT
-	2. handle booleans
-*/
+alias SkipCallback  = fn bool(char);
 
 /* Example format
-	; comment or field_name
+	; field_name
 	123,      // int
 	"hello",  // string
-	d"hello", // dstring
 	228.0,	  // float/double
 	[			// array open
 		{		// table open
-			; table inner content
 			123,      // int
 			"hello",  // string
-			d"hello", // dstring
 			228.0,	  // float/double
 		}		// table close
 	]			// array close
@@ -50,6 +44,12 @@ enum TokenChar : const inline char
 	COMMA			= ',',
 }
 
+enum BoolAsString : const inline char[]
+{
+	TRUE  = "true",
+	FALSE = "false",
+}
+
 fn void Parser.init(&parser, char[] data) @private
 {
 	parser.buff_view = data;
@@ -68,8 +68,14 @@ macro void Parser.start(&parser, out_val) @private
 
 <*
 	@require util::is_kindof($typeof(out_val), POINTER, SLICE) : "Should be a pointer or slice"
+	@require !util::is_ptr_to_ptr($typeof(out_val)) : "Should not be a pointer to pointer"
 *>
-macro void Parser.parse_any(&parser, out_val) @private
+macro void Parser.parse_any(
+	&parser,
+	out_val,
+	bool $unwrap_distinct = false,
+	bool $parse_next_array_as_string = false,
+) @private
 {
 	parser.skip_ws();
 
@@ -78,40 +84,66 @@ macro void Parser.parse_any(&parser, out_val) @private
 		parser.skip_ws();
 	}
 
-	var $RootType = $typeof(out_val);
-	var $kind = $RootType.kindof;
-	var $Type = $kind == POINTER ? util::get_pointee_type($typeof(out_val)) : $RootType;
-	
+	var $Type = $typeof(out_val);
+	var $kind = $Type.kindof;
+
+	$if $kind == POINTER:
+		$Type = $Type.inner;
+		$kind = $Type.kindof;
+	$endif
+
+	$if $unwrap_distinct && $kind == DISTINCT:
+		$Type = $Type.inner;
+		$kind = $Type.kindof;
+	$endif
+
+// NOTE: DEBUG
+	// io::printfn("curr char: %c, val: %s, kind: %s, $unwrap_dist: %s, $arr_as_str: %s", parser.curr_char(), out_val, $kind, $unwrap_distinct, $parse_next_array_as_string);
+
 	$switch ($kind):
+	$case DISTINCT:
+		$switch:
+		$case $Type.has_tagof(CustomFmtTag.SLICE_STRING):
+			parser.parse_any(out_val, true, true);
+		$case $Type.has_tagof(CustomFmtTag.STRUCT_STRING):
+			parser.parse_any(out_val, true, true);
+		$default:
+			parser.parse_any(out_val, true);
+		$endswitch
 	$case STRUCT:
 	$case BITSTRUCT:
-		parser.parse_struct(out_val);
+		parser.parse_struct(out_val, $parse_next_array_as_string);
 	$case ARRAY:
-		if (parser.curr_char() == TokenChar.STRING_START) {
-			parser.parse_str_val(out_val[..]);
-		} else {
-			parser.parse_array(out_val[..]);
-		}
+		$if $parse_next_array_as_string:
+			parser.parse_string(out_val[:out_val.len]);
+		$else
+			parser.parse_array(out_val[:out_val.len]);
+		$endif
 	$case SLICE:
-		$if $RootType == char[]:
-			parser.parse_str_value(out_val);
+		$if $parse_next_array_as_string:
+			parser.parse_string(out_val);
 		$else
 			parser.parse_array(out_val);
 		$endif
 	$case SIGNED_INT:
 	$case UNSIGNED_INT:
 	$case FLOAT:
-		parser.parse_numeric_value(out_val);
-// TODO: parse boolean values
+		parser.parse_number(out_val);
 	$case BOOL:
-		unreachable("TODO: parse boolean values");
+		parser.parse_boolean(out_val);
+	$case ENUM:
+		parser.parse_plain_enum(out_val);
+	$case CONST_ENUM:
+		parser.parse_const_enum(out_val);
+	$default:
+		unreachable("Unsupported type for parsing: %s, value: %s", $Type, out_val);
 	$endswitch
 
 	parser.skip_line();
 }
 
 <*
-	@require $typeof(out_array).kindof == SLICE : "Should be a slice"
+	@require util::is_kindof($typeof(out_array), SLICE, POINTER) : "Should be a slice or pointer to array"
 	@require parser.curr_char() == TokenChar.ARRAY_START : "Should be at the start of array"
 *>
 macro void Parser.parse_array(&parser, out_array) @private
@@ -123,28 +155,40 @@ macro void Parser.parse_array(&parser, out_array) @private
 		parser.parse_any(item);
 	}
 
-	parser.skip_until_after_char(TokenChar.ARRAY_END);
+	parser.skip_until_after_curr_char(TokenChar.ARRAY_END);
 }
 
 <*
 	@require $typeof(out_value).kindof == POINTER : "Should be a pointer"
 	@require parser.curr_char() == TokenChar.STRUCT_START : "Should be at the start of struct"
 *>
-macro void Parser.parse_struct(&parser, out_value) @private
+macro void Parser.parse_struct(
+	&parser,
+	out_value,
+	bool $parse_next_array_as_string = false,
+) @private
 {
 	parser.next();
 	assert(!parser.is_at_end(), "Shouldn't be at the end here");
 
+	var $RootType = $typeof(out_value);
 	var $Type = util::@get_pointee_type_val(out_value);
+
 	$foreach $mem : $Type.membersof:
-		$if $mem.kindof == ARRAY:
-			parser.parse_any(out_value.$eval($mem.nameof)[..]);
+		var $MemType = $mem.typeid;
+		bool $has_str_tag = $mem.kindof == DISTINCT &&& util::is_kindof($MemType.inner, ARRAY) &&& $MemType.has_tagof(CustomFmtTag.SLICE_STRING);
+		$if $has_str_tag:
+			parser.parse_any(out_value.$eval($mem.nameof)[..], true, true);
 		$else
-			parser.parse_any(&out_value.$eval($mem.nameof));
+			$if $mem.kindof == ARRAY:
+				parser.parse_any(out_value.$eval($mem.nameof)[..], true, $parse_next_array_as_string);
+			$else
+				parser.parse_any(&out_value.$eval($mem.nameof));
+			$endif
 		$endif
 	$endforeach
 
-	parser.skip_until_after_char(TokenChar.STRUCT_END);
+	parser.skip_until_after_curr_char(TokenChar.STRUCT_END);
 }
 
 <*
@@ -152,25 +196,131 @@ macro void Parser.parse_struct(&parser, out_value) @private
 	@require parser.end - parser.curr > 1 : "Buffer shouldn't end with a quote"
 	@require parser.next_char().is_alpha() : "Next symbol should be an ascii letter [a-zA-Z]"
 *>
-fn void Parser.parse_str_value(&parser, char[] out_str) @private
+macro void Parser.parse_string(&parser, out_str) @private
+{
+	// step after opening quote
+	parser.next();
+	usz start = parser.curr;
+	parser.skip_until_next_char('\"');
+	usz acquired_len = parser.curr - start + 1;
+	assert(parser.curr > start, "Should move at least 1 character");
+	assert((acquired_len <= out_str.len), "Should not exceed out_str.len");
+	mem::copy(out_str, parser.buff_view.ptr + start, acquired_len);
+	// step after closing quote
+	parser.next();
+}
+
+<*
+	@require parser.curr_char() == 't' || parser.curr_char() == 'f' : "Should start from 't' for true or from 'f' for false"
+	@require parser.end - parser.curr >= "true".len : "Buffer should have enough space"
+	@require parser.next_char().is_alpha() : "Next symbol should be an ascii letter [a-zA-Z]"
+*>
+fn void Parser.parse_boolean(&parser, bool* out_bool) @private
 {
 	usz start = parser.curr;
-	parser.skip_until_char('\"');
+	parser.move_until_value_end();
 	assert(parser.curr > start, "Should move at least 1 character");
-	assert((parser.curr - start < out_str.len), "Should not exceed out_str.len");
-	mem::copy(out_str, parser.buff_view.ptr + start, (parser.curr - start));
+	assert(parser.curr - start >= "true".len, "Should move at least 4 characters");
+
+	char[] bool_value = parser.buff_view[start .. parser.curr - 1];
+	if (mem::equals((char[])BoolAsString.TRUE, bool_value)) {
+		*out_bool = true;
+	}
+	else if (mem::equals((char[])BoolAsString.FALSE, bool_value)) {
+		*out_bool = false;
+	}
+	else {
+		unreachable("unrecognized value for boolean: %s", bool_value);
+	}
 }
+
 
 <*
 	@require $typeof(out_value).kindof == POINTER : "Should be a pointer"
 	@require parser.curr_char().is_digit() || is_digit_sign(parser.curr_char()) : "Character we currently on should be either a digit or a sign"
 *>
-macro void Parser.parse_numeric_value(&parser, out_value) @private
+macro void Parser.parse_number(&parser, out_value) @private
 {
-	usz digit_end = parser.curr;
+	ElasticArray{char, MAX_DIGIT_LEN} digit_buff;
+	parser.parse_num_private(&digit_buff);
+	char[] digit_as_chars = digit_buff.array_view();
+
+	var $Type = util::@get_pointee_type_val(out_value);
+	$switch $Type.sizeof:
+	$case char.sizeof:
+	$case short.sizeof:
+	$case int.sizeof:
+		$if types::is_int($Type):
+			*out_value = ($Type)libc::atoi(digit_as_chars);
+		$else
+			*out_value = libc::strtof(digit_as_chars, null);
+		$endif
+	$case long.sizeof:
+		$if types::is_int($Type):
+			*out_value = ($Type)libc::atoll(digit_as_chars);
+		$else
+			*out_value = libc::strtod(digit_as_chars, null);
+		$endif
+	$default:
+		unreachable("Type must be one of this: SIGNED_INT, UNSIGNED_INT, FLOAT, DOUBLE");
+	$endswitch
+}
+
+<*
+	@require $typeof(out_value).kindof == POINTER : "Should be a pointer"
+	@require parser.curr_char().is_digit() : "Character we currently on should be either a digit or a sign"
+*>
+macro void Parser.parse_const_enum(&parser, out_value) @private
+{
+	ElasticArray{char, MAX_DIGIT_LEN} digit_buff;
+	parser.parse_num_private(&digit_buff);
+	char[] digit_as_chars = digit_buff.array_view();
+
+	var $EnumType = util::@get_pointee_type_val(out_value);
+	var $InnerType = $EnumType.inner;
+
+	$switch ($InnerType.sizeof):
+	$case char.sizeof:
+	$case short.sizeof:
+	$case int.sizeof:
+		*out_value = ($EnumType)libc::atoi(digit_as_chars);
+	$case long.sizeof:
+		*out_value = ($EnumType)libc::atoll(digit_as_chars);
+	$default:
+		unreachable("Unknown size of type of const enum: %d", $InnerType.sizeof);
+	$endswitch
+}
+
+<*
+	@require $typeof(out_value).kindof == POINTER : "Should be a pointer"
+	@require parser.curr_char().is_digit() : "Character we currently on should be either a digit or a sign"
+*>
+macro void Parser.parse_plain_enum(&parser, out_value) @private
+{
+	ElasticArray{char, MAX_DIGIT_LEN} digit_buff;
+	parser.parse_num_private(&digit_buff);
+	char[] digit_as_chars = digit_buff.array_view();
+
+	var $EnumType = util::@get_pointee_type_val(out_value);
+	var $OrdinalType = $EnumType.inner;
+	
+	$switch ($OrdinalType.sizeof):
+	$case char.sizeof:
+	$case short.sizeof:
+	$case int.sizeof:
+		*out_value = $EnumType.from_ordinal(($OrdinalType)libc::atoi(digit_as_chars));
+	$case long.sizeof:
+		*out_value = $EnumType.from_ordinal(($OrdinalType)libc::atoll(digit_as_chars));
+	$default:
+		unreachable("Unknown size of type of plain enum: %d", $OrdinalType.sizeof);
+	$endswitch
+}
+
+macro void Parser.parse_num_private(&parser, ElasticArray{char, MAX_DIGIT_LEN}* digit_buff) @local
+{
+	usz start = parser.curr;
 	bool is_digit = false;
 	bool was_dot = false;
-	ElasticArray{char, MAX_DIGIT_LEN} digit_buff;
 
 	while (parser.curr < parser.end)
 	{
@@ -186,32 +336,11 @@ macro void Parser.parse_numeric_value(&parser, out_value) @private
 			assert(!was_dot, "Should be digit after dot");
 			break;
 		}
-		digit_end++;
 	}
 
-	assert(digit_end > parser.curr, "Should be at least 1 digit in a number");
-	assert((digit_end - parser.curr) < MAX_DIGIT_LEN, "Should be at most 32 characters");
-
-	digit_buff.resize(digit_end - parser.curr);
-	char[] digit_as_chars = digit_buff.array_view();
-
-	var $Type = util::@get_pointee_type_val(out_value);
-	$switch ($sizeof($Type)):
-	$case $sizeof(int):
-		$if types::is_int($Type):
-			*out_value = libc::atoi(digit_as_chars.ptr);
-		$else
-			*out_value = libc::strtof(digit_as_chars.ptr, null);
-		$endif
-	$case $sizeof(long):
-		$if types::is_int($Type):
-			*out_value = libc::atoll(digit_as_chars.ptr);
-		$else
-			*out_value = libc::strtod(digit_as_chars.ptr, null);
-		$endif
-	$default:
-		unreachable("Type must be one of this: SIGNED_INT, UNSIGNED_INT, FLOAT, DOUBLE");
-	$endswitch
+	assert(parser.curr > start, "Should be at least 1 digit in a number");
+	assert((parser.curr - start) < MAX_DIGIT_LEN, "Should be at most 32 characters");
+	digit_buff.push_all(parser.buff_view[start .. parser.curr - 1]);
 }
 
 <*
@@ -235,11 +364,16 @@ fn bool Parser.skip_ws(&parser) @private
 
 fn bool Parser.skip_line(&parser) @private
 {
-	parser.skip_until_after_char('\n');
+	parser.skip_until_after_curr_char('\n');
 	return parser.is_at_end();
 }
 
-fn void Parser.skip_until_char(&parser, char c) @private
+fn void Parser.move_until_value_end(&parser) @private
+{
+	parser.skip_until_curr_char_cb(&is_space_or_comma);
+}
+
+fn void Parser.skip_until_curr_char(&parser, char c) @private
 {
 	while (parser.curr < parser.end && parser.curr_char() != c)
 	{
@@ -247,7 +381,15 @@ fn void Parser.skip_until_char(&parser, char c) @private
 	}
 }
 
-fn void Parser.skip_until_after_char(&parser, char c) @private
+fn void Parser.skip_until_next_char(&parser, char c) @private
+{
+	while (parser.curr < parser.end && parser.next_char() != c)
+	{
+		parser.next();
+	}
+}
+
+fn void Parser.skip_until_after_curr_char(&parser, char c) @private
 {
 	while (parser.curr < parser.end && parser.curr_char() != c)
 	{
@@ -256,47 +398,12 @@ fn void Parser.skip_until_after_char(&parser, char c) @private
 	parser.next();
 }
 
-fn void Parser.skip_while_char(&parser, char c) @private
-{
-	while (parser.curr < parser.end && parser.curr_char() == c)
-	{
-		parser.next();
-	}
-}
-
-fn void Parser.skip_until_cb(&parser, SkipCallback cb) @private
+fn void Parser.skip_until_curr_char_cb(&parser, SkipCallback cb) @private
 {
 	while (parser.curr < parser.end && !cb(parser.curr_char()))
 	{
 		parser.next();
 	}
-}
-
-fn void Parser.skip_while_cb(&parser, SkipCallback cb) @private
-{
-	while (parser.curr < parser.end && cb(parser.curr_char()))
-	{
-		parser.next();
-	}
-}
-
-fn void Parser.skip_until_in_charset(&parser, char[] charset) @private
-{
-	while (parser.curr < parser.end && !is_in_charset(parser.curr_char(), charset)) {
-		parser.next();
-	}
-}
-
-fn void Parser.skip_while_in_charset(&parser, char[] charset) @private
-{
-	while (parser.curr < parser.end && is_in_charset(parser.curr_char(), charset)) {
-		parser.next();
-	}
-}
-
-fn bool Parser.is_curr_char_in_charset(&parser, char[] charset) @private
-{
-	return is_in_charset(parser.buff_view[parser.curr], charset);
 }
 
 fn char Parser.curr_char(&parser) @private @inline
@@ -322,6 +429,11 @@ fn void Parser.next(&parser) @private @inline
 fn bool Parser.is_at_end(&parser) @private @inline
 {
 	return parser.curr == parser.end;
+}
+
+fn bool is_space_or_comma(char c)
+{
+	return ascii::is_space(c) || c == ',';
 }
 
 fn bool is_in_charset(char c, char[] charset) @private

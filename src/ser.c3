@@ -230,7 +230,7 @@ macro void Serializer.serialize_to_text_trivial(
 	usz assumed_req_capacity = ser.calc_required_capacity_text(assumed_data_size);
 	ser.buff.reserve(assumed_req_capacity);
 	ser.write_file_header_to_buff(0, TEXT);
-	ser.formatter.format_any(val, true, 0, true);
+	ser.formatter.format_any(val, 0, true);
 	ser.update_file_contents_len_with_curr_offset();
 }
 

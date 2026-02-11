@@ -3,105 +3,125 @@ module ser;
 import std::io;
 import util;
 
-const FMT_PLAIN_STRING_TAG = "FMT_STRING";
-const INDENT_SYMBOL = '\t';
-
-/* TODO:
-	1. maybe rework arguments to the context sysmtem
-*/
-
-struct ParseContext
+enum CustomFmtTag : const inline String
 {
-	char indent_count;
-	bool top_level;
-	bool unwrap_distinct;
-	bool parse_next_array_as_string; // !important
+// for char slices/arrays that user wants to format as strings
+	SLICE_STRING 	= "FMT_SLICE_STRING",
+// for structs which have char arrays inside (ElasticArray{char, 20})
+	STRUCT_STRING 	= "FMT_STRUCT_STRING",
 }
 
-// fn void ParseContext.init(&ctx)
-// {
-// 	ctx.indent_count = 0;
-// 	ctx.indent_symbol = ;
-// }
+const INDENT_SYMBOL = '\t';
 
 macro void Formatter.format_any(
 	&f,
 	val,
-	bool $print_field_names = false,
 	char $indent_count = 0,
 	bool $top_level = false,
 	bool $unwrap_distinct = false,
+	bool $parse_next_array_as_string = false,
 ) @private
 {
 	var $Type = $typeof(val);
 	var $kind = $Type.kindof;
-	$if $unwrap_distinct:
-		$kind = $Type.inner.kindof;
+
+	$if $kind == POINTER:
+		$Type = $Type.inner;
+		$kind = $Type.kindof;
 	$endif
 
+	$if $unwrap_distinct && $kind == DISTINCT:
+		$Type = $Type.inner;
+		$kind = $Type.kindof;
+	$endif
+
+	// var val = util::@deref_if_ptr(input_val);
+
  	$switch $kind:
-	$case STRUCT:
-	$case BITSTRUCT:
-		f.format_struct(val, $print_field_names, $indent_count, $top_level, $top_level);
-	$case ARRAY:
-	$case SLICE:
-		f.format_array(val, $print_field_names, $indent_count, $top_level, $top_level);
 	$case DISTINCT:
 		$switch:
-		$case $Type.has_tagof(FMT_PLAIN_STRING_TAG):
-			f.format_string(val, $print_field_names, $indent_count, $top_level, $top_level);
+		$case $Type.has_tagof(CustomFmtTag.SLICE_STRING):
+			f.format_any(val, $indent_count, $top_level, true, true);
+		$case $Type.has_tagof(CustomFmtTag.STRUCT_STRING):
+			f.format_any(val, $indent_count, $top_level, true, true);
 		$default:
-			$kind = $Type.inner.kindof;
-			f.format_any(val, $print_field_names, $indent_count,  $top_level, true);
+			f.format_any(val, $indent_count, $top_level, true);
 		$endswitch
+	$case STRUCT:
+	$case BITSTRUCT:
+		f.format_struct(val, $indent_count, $top_level, $parse_next_array_as_string);
+	$case ARRAY:
+	$case SLICE:
+		$if $parse_next_array_as_string:
+			f.format_string(val, $indent_count, $top_level);
+		$else
+			f.format_array(val, $indent_count, $top_level);
+		$endif
+	$case BOOL:
+	$case SIGNED_INT:
+	$case UNSIGNED_INT:
+	$case FLOAT:
+	$case TYPEID:
+	$case ENUM:
+	$case CONST_ENUM:
+		f.format_primitive(val, $kind, $indent_count, $top_level);
 	$default:
-		f.format_primitive(val, $indent_count);
+		unreachable("Type kind is not supported for formatting: %s", $kind);
 	$endswitch
 }
 
 <*
 	Introspect a primitive val and print it to a formatter
-	@require util::is_primitive_type($typeof(val))
 *>
-macro usz Formatter.format_primitive(
+macro void Formatter.format_primitive(
 	&f,
 	val,
+	TypeKind $kind,
 	char $indent_count = 0,
-	bool $start_newline = false,
-	bool $end_newline = false,
+	bool $top_level = false,
 ) @private
 {
 	String $indent_str = @get_indent($indent_count);
 
-	usz written;
-	$if $start_newline:
-		written += f.print("\n")!!;
+	$if $top_level:
+		f.print("\n")!!;
 	$endif
-	written += f.printf($indent_str +++ "%s", val)!!;
-	$if $end_newline:
-		written += f.print("\n")!!;
+
+	$switch ($kind):
+	$case BOOL:
+	$case SIGNED_INT:
+	$case UNSIGNED_INT:
+	$case FLOAT:
+	$case TYPEID:
+		f.printf($indent_str +++ "%s", val)!!;
+	$case ENUM:
+		f.printf($indent_str +++ "%d", val.ordinal)!!;
+	$case CONST_ENUM:
+		f.printf($indent_str +++ "%d", val)!!;
+	$endswitch
+
+	$if $top_level:
+		f.print("\n")!!;
 	$endif
-	return written;
 }
 
 <*
 	Introspect a struct and print it to a formatter
-	@require util::@is_kindof_val(val, STRUCT, BITSTRUCT, DISTINCT) : `This macro is only valid on STRUCT and BITSTRUCT`
+	@require util::@is_kindof_val(val, STRUCT, BITSTRUCT, DISTINCT) : `This macro is only valid on STRUCT, BITSTRUCT or DISTINCT`
 *>
 macro void Formatter.format_struct(
 	&f,
 	val,
-	bool $print_field_names = false,
 	char $indent_count = 0,
-	bool $start_newline = false,
-	bool $end_newline = false,
+	bool $top_level = false,
+	bool $parse_next_array_as_string = false,
 ) @private 
 {
 	String $base_indent_s = @get_indent($indent_count);
 	String $inner_indent_s = $base_indent_s +++ INDENT_SYMBOL;
 	var $Type = $typeof(val); 
 
-	$if $start_newline:
+	$if $top_level:
 	    f.print("\n" +++ $base_indent_s +++ "{\n")!!;
 	$else
 	    f.print($base_indent_s +++ "{\n")!!;
@@ -111,14 +131,15 @@ macro void Formatter.format_struct(
         $if $i > 0:
             f.print(",\n")!!;
         $endif
-        $if $print_field_names && $member.nameof != "":
+        $if $member.nameof != "":
             f.printf($inner_indent_s +++ "; %s\n", $member.nameof)!!;
 		$endif
-		f.format_any($member.get(val), $print_field_names, $indent_count + 1);
+		f.format_any($member.get(val), $indent_count + 1, false, false, $parse_next_array_as_string);
 	$endforeach
 
 	f.print("\n" +++ $base_indent_s +++ "}")!!;
-	$if $end_newline:
+
+	$if $top_level:
 		f.print("\n")!!;
 	$endif
 }
@@ -130,15 +151,13 @@ macro void Formatter.format_struct(
 macro void Formatter.format_array(
 	&f,
 	val,
-	bool $print_field_names = false,
 	char $indent_count = 0,
-	bool $start_newline = false,
-	bool $end_newline = false,
+	bool $top_level = false,
 ) @private
 {
 	String $indent_str = @get_indent($indent_count);
 
-	$if $start_newline:
+	$if $top_level:
 	    f.print("\n" +++ $indent_str +++ "[\n")!!;
 	$else
 	    f.print($indent_str +++ "[\n")!!;
@@ -148,32 +167,31 @@ macro void Formatter.format_array(
 		if (i > 0) {
             f.print(",\n")!!;
 		}
-		f.format_any(member, $print_field_names, $indent_count + 1);
+		f.format_any(member, $indent_count + 1);
 	}
 
 	f.print("\n" +++ $indent_str +++ "]")!!;
-	$if $end_newline:
+
+	$if $top_level:
 		f.print("\n")!!;
 	$endif
 }
 
 <*
 	Introspect an array and print it to a formatter
-	@require util::is_kindof($typeof(val).inner, ARRAY, SLICE) : "Should be ARRAY or SLICE"
+	@require util::is_kindof($typeof(val), ARRAY, SLICE, DISTINCT) : "Should be ARRAY or SLICE"
 	@require util::@get_innermost_type_val(val) == char : "Should be char as underlying type"
 *>
 macro void Formatter.format_string(
 	&f,
 	val,
-	bool $print_field_names = false,
 	char $indent_count = 0,
-	bool $start_newline = true,
-	bool $end_newline = true,
+	bool $top_level = true,
 ) @private
 {
 	String $indent_str = @get_indent($indent_count);
 
-	$if $start_newline:
+	$if $top_level:
 	    f.print("\n" +++ $indent_str +++ "\"")!!;
 	$else
 	    f.print($indent_str +++ "\"")!!;
@@ -182,7 +200,8 @@ macro void Formatter.format_string(
 	f.printf("%s", (String)val[..])!!;
 
 	f.print("\"")!!;
-	$if $end_newline:
+
+	$if $top_level:
 		f.print("\n")!!;
 	$endif
 }

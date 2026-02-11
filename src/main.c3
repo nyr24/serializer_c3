@@ -9,23 +9,33 @@ import std::collections::map;
 
 alias StackString = ElasticArray{char, 32};
 
-typedef MyString @tag(FMT_PLAIN_STRING_TAG, 1) = char[5];
-
-// struct MyString @tag(FMT_STRING_TAG, 1)
-// {
-// 	char[5] val;
-// }
+// Mark type to treat it as string, not array of bytes and format differently
+typedef MyString @tag(CustomFmtTag.SLICE_STRING, 1) = char[5];
+typedef MyCompString @tag(CustomFmtTag.STRUCT_STRING, 1) = ElasticArray{char, 5};
 
 struct St
 {
-	// MyString	name;
-	// char[5]		name;
-	ElasticArray{char, 5} name;
+	MyCompString name;
 	int         age;
 	float       money;
+	bool		is_married;
+	Inner		inner;
 }
 
 typedef StDistinct = St;
+
+enum InnerType
+{
+	MONSTER,
+	TROLL,
+	GOBLIN
+}
+
+struct Inner
+{
+	MyString 	name;
+	InnerType 	type;
+}
 
 struct Entity
 {
@@ -55,6 +65,7 @@ fn int main(String[] args)
 	const EXAMPLE_DSTRING = false;
 	const EXAMPLE_ENTITY = false;
 	const EXAMPLE_TEXT_SIMPLE = true;
+	const EXAMPLE_TEXT_LIST = false;
 
 	bool should_write = args.len > 1;
 
@@ -78,55 +89,77 @@ fn int main(String[] args)
 		example_text_simple(&serializer, should_write);
 	}
 
+	if (EXAMPLE_TEXT_LIST) {
+		example_text_list(&serializer, should_write);
+	}
+
 	return 0;
 }
 
 // Examples
 
-fn void St.init(&new, char[5]* name, int age, float money)
+fn void St.init(&new, char[5]* name, int age, float money, bool is_married = true, char[] inner_name = "inner1", InnerType inner_type = TROLL)
 {
 	mem::copy(&new.name.entries, name, name.len);
-	new.name.resize(name.len);
+	new.name.size = name.len;
 	new.age = age;
 	new.money = money;
+	new.is_married = is_married;
+	new.inner.init(inner_name, inner_type);
 }
 
 fn void St.print(&s)
 {
-	io::printfn("St: %s %d %f", (String)s.name.entries[..], s.age, s.money);
+	io::printfn("St: %s %d %f %s", (String)s.name.entries[..], s.age, s.money, s.is_married);
+	s.inner.print();
 }
 
-fn void example_text_simple(Serializer* serializer, bool should_write)
+fn void Inner.init(&inner, char[] name, InnerType type)
 {
-	String f_name = ser::acquire_file_fmt_name("test.simple", TEXT);
-
-	St[3] s_ces1;
-	if (should_write) {
-		s_ces1[0].init("hello", 8, 16.0f);
-		s_ces1[1].init("world", 16, 32.0f);
-		s_ces1[2].init("third", 32, 64.0f);
-
-		serializer.serialize_to_text_trivial_and_save_to_file(s_ces1[..], tmem, f_name);
-	}
-
-	serializer.deserialize_from_text_trivial(s_ces1[..], tmem, f_name);
-
-	foreach (s : s_ces1[..]) {
-		s.print();
-	}
+	mem::copy(&inner.name, name.ptr, inner.name.len);
+	inner.type = type;
 }
+
+fn void Inner.print(&inner)
+{
+	io::printfn("Inner: %s, %s", (String)inner.name[..], inner.type);
+}
+
+// Current testing
+
+fn void example_text_list(Serializer* serializer, bool should_write)
+{
+	// String f_name = ser::acquire_file_fmt_name("test.list", TEXT);
+	// List{St} list;
+	// list.tinit(3);
+	// defer list.free();
+
+	// if (should_write) {
+	// 	St[3] s_ces;
+	// 	s_ces[0].init("hello", 13, 228.5f);
+	// 	s_ces[1].init("world", 95, 1773.5f);
+	// 	s_ces[2].init("third", 7785, 56.0631);
+	// 	list.push_all(s_ces[..]);
+	// 	serializer.serialize_to_text_trivial_and_save_to_file(list, tmem, f_name, $sizeof(St) * 4);
+	// }
+
+	// serializer.deserialize_from_text_trivial(&list, tmem, f_name);
+	// io::printn(list);
+}
+
+// Binary
 
 fn void example_simple(Serializer* serializer, bool should_write)
 {
 	String f_name = ser::acquire_file_fmt_name("test.simple", BIN);
 
 	if (should_write) {
-		St[3] s_ces1;
-		s_ces1[0].init("hello", 13, 228.5f);
-		s_ces1[1].init("world", 95, 1773.5f);
-		s_ces1[2].init("third", 7785, 56.0631);
+		St[3] s_ces;
+		s_ces[0].init("hello", 13, 228.5f);
+		s_ces[1].init("world", 95, 1773.5f);
+		s_ces[2].init("third", 7785, 56.0631);
 
-		serializer.serialize_to_bin_trivial_and_save_to_file(util::to_byte_slice{St}(s_ces1[..]), tmem, false, f_name);
+		serializer.serialize_to_bin_trivial_and_save_to_file(util::to_byte_slice{St}(s_ces[..]), tmem, false, f_name);
 	}
 
 	char[] deser_slice = serializer.deserialize_from_bin_trivial(f_name);
@@ -243,4 +276,39 @@ fn void Entity.deserialize_from_chunks_bin(&entity, ChunkIterator chunk_it, Allo
 	entity.textures.deserialize_from_bytes_bin(textures_data, alloc);
 	entity.job_name.deserialize_from_bytes_bin(job_name_data, alloc);
 	entity.map.deserialize_from_chunks_bin(chunk_it, alloc);
+}
+
+// Text serialization
+
+fn void example_text_simple(Serializer* serializer, bool should_write)
+{
+	String f_name = ser::acquire_file_fmt_name("test.simple", TEXT);
+
+// Slice
+	St[3] s_ces;
+	if (should_write) {
+		s_ces[0].init("hello", 8, 16.0f, true, "iner1", MONSTER);
+		s_ces[1].init("world", 16, 32.0f, false, "iner2", TROLL);
+		s_ces[2].init("third", 32, 64.0f, false, "iner3", GOBLIN);
+
+		serializer.serialize_to_text_trivial_and_save_to_file(s_ces[..], tmem, f_name);
+	}
+
+	serializer.deserialize_from_text_trivial(s_ces[..], tmem, f_name);
+
+	foreach (s : s_ces[..]) {
+		s.print();
+	}
+
+// Struct
+	// St s1;
+	// int i = 32;
+	
+	// if (should_write) {
+	// 	s1.init("hello", 8, 16.0f, true);
+	// 	serializer.serialize_to_text_trivial_and_save_to_file(s1, tmem, f_name);
+	// }
+
+	// serializer.deserialize_from_text_trivial(&s1, tmem, f_name);
+	// s1.print();
 }

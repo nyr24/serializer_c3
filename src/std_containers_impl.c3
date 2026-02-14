@@ -79,6 +79,7 @@ fn void List.deserialize_from_text(&list, Parser* parser, Allocator alloc, Strin
 	Type[] entries = allocator::alloc_array(alloc, Type, list.capacity); 
 	parser.parse_array(entries[:list.size]);
 	list.entries = entries.ptr;
+	parser.skip_until_struct_end();
 }
 
 module std::core::dstring;
@@ -168,6 +169,7 @@ fn void DString.deserialize_from_text(&dstring, Parser* parser, Allocator alloc,
 
 	parser.skip_until_next_value_start();
 	parser.parse_string(data.chars[:data.len]);
+	parser.skip_until_struct_end();
 }
 
 module std::collections::map <Key, Value>;
@@ -270,4 +272,5 @@ fn void HashMap.deserialize_from_text(&map, Parser* parser, Allocator alloc, Str
 			map.set(keys[i], values[i]);
 		}
 	}
+	parser.skip_until_struct_end();
 }

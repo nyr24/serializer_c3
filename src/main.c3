@@ -25,11 +25,6 @@ fn uint MyCompositeString.hash(&self)
 	return (uint)fnv64a::hash(self.entries[:self.size]);
 }
 
-// fn uint MyString.hash(&self)
-// {
-// 	return (uint)fnv64a::hash(util::ptr_to_byte_slice{MyString}(self));
-// }
-
 struct St (Printable)
 {
 	MyCompositeString name;
@@ -54,7 +49,7 @@ struct Inner (Printable)
 	InnerType 	type;
 }
 
-struct Entity
+struct Entity @tag(CustomFmtTag.STRUCT_STRING, 1)
 {
 	StackString name;
 	int         age;
@@ -85,7 +80,7 @@ fn int main(String[] args)
 	const EXAMPLE_TEXT_LIST = true;
 	const EXAMPLE_TEXT_DSTRING = true;
 	const EXAMPLE_TEXT_HASHMAP = true;
-	// const EXAMPLE_TEXT_ENTITY = true;
+	const EXAMPLE_TEXT_ENTITY = true;
 
 	bool should_write = args.len > 1;
 
@@ -121,9 +116,9 @@ fn int main(String[] args)
 		example_text_hashmap(&serializer, should_write);
 	}
 
-	// if (EXAMPLE_TEXT_ENTITY) {
-	// 	example_text_entity(&serializer, should_write);
-	// }
+	if (EXAMPLE_TEXT_ENTITY) {
+		example_text_entity(&serializer, should_write);
+	}
 
 	return 0;
 }
@@ -159,11 +154,6 @@ fn void Inner.init(&inner, char[] name, InnerType type)
 	inner.type = type;
 }
 
-// fn usz? Inner.to_format(&inner, Formatter* f) @dynamic
-// {
-// 	return f.printf("\tInner: %s %s", (String)inner.name[..], inner.type)!;
-// }
-
 fn void Inner.print(&inner)
 {
 	io::printf("\tInner: %s %s\n", (String)inner.name[..], inner.type);
@@ -171,9 +161,7 @@ fn void Inner.print(&inner)
 
 // EXAMPLES
 
-// Current testing
-
-// Binary
+// Binary serialization
 
 fn void example_simple(Serializer* serializer, bool should_write)
 {
@@ -246,65 +234,20 @@ fn void example_entity(Serializer* serializer, bool should_write)
 
 	if (should_write) {
 		int[*] textures = {1,2,3,4,5};
-		en.init("Vasya", 13, 666.77, textures[..], "Gamburger Builder", tmem);
+		en.init(
+			"Vasya",
+			13,
+			666.77,
+			textures[..],
+			"Gamburger Builder",
+			tmem
+		);
 
 		serializer.serialize_to_bin_and_save_to_file(&en, tmem, f_name);
 	}
 
 	serializer.deserialize_from_bin(&en, tmem, f_name);
 	en.print();
-}
-
-// Implementation on complex structure (some part - stack, some part - heap)
-
-fn void Entity.init(&entity, String name, int age, double money, int[] textures, String job_name, Allocator alloc = mem)
-{
-	entity.name.push_all(name);
-	entity.age = age;
-	entity.money = money;
-	entity.textures.init(alloc, textures.len);
-	entity.textures.push_all(textures);
-	entity.job_name.init(alloc, job_name.len);
-	entity.job_name.append_string(job_name);
-	entity.map.init_from_keys_and_values(alloc, { 1, 2, 3, 4 }, { 0.1f, 0.2f, 0.3f, 0.4f }, 20);
-}
-
-fn void Entity.print(&en)
-{
-	io::printfn("Entity name: %s, age: %d, money: %f, job_name: %s, textures_len: %d, map item count: %d, map third item: %f",
-		(String)en.name.array_view(),
-		en.age,
-		en.money,
-		en.job_name.str_view(),
-		en.textures.size,
-		en.map.count,
-		en.map.get(3)!!);
-}
-
-// Serializable interface implementation for Entity struct
-// chunked serialization - 1. stack part; 2. list (heap); 3. dstring (heap); 4. hashmap (heap);
-
-fn void Entity.serialize_to_bin(&entity, Serializer* ser, Allocator alloc) @dynamic
-{
-	EntityStackPart stack_p;
-	stack_p.name = entity.name;
-	stack_p.age = entity.age;
-	stack_p.money = entity.money;
-	char[] stack_p_slice = util::ptr_to_byte_slice{EntityStackPart}(&stack_p);
-	
-	ser.append_bin_data_to_buff(stack_p_slice, alloc, false);
-	ser.serialize_to_bin(&entity.textures, alloc);
-	ser.serialize_to_bin(&entity.job_name, alloc);
-	ser.serialize_to_bin(&entity.map, alloc);
-}
-
-fn void Entity.deserialize_from_bin(&entity, ChunkIterator* chunk_it, Allocator alloc) @dynamic
-{
-	char[] first_chunk = chunk_it.next();
-	mem::copy((char*)entity, first_chunk.ptr, first_chunk.len);
-	entity.textures.deserialize_from_bin(chunk_it, alloc);
-	entity.job_name.deserialize_from_bin(chunk_it, alloc);
-	entity.map.deserialize_from_bin(chunk_it, alloc);
 }
 
 // Text serialization
@@ -393,19 +336,125 @@ fn void example_text_hashmap(Serializer* serializer, bool should_write)
 	io::printn(map);
 }
 
-// fn void example_text_entity(Serializer* serializer, bool should_write)
-// {
-// 	serializer.reset_state();
-// 	String f_name = ser::acquire_file_fmt_name("example.entity", TEXT);
-// 	Entity en;
+fn void example_text_entity(Serializer* serializer, bool should_write)
+{
+	serializer.reset_state();
+	String f_name = ser::acquire_file_fmt_name("example.entity", TEXT);
+	Entity en;
 
-// 	if (should_write) {
-// 		int[*] textures = {5,4,3,2,1};
-// 		en.init("John_Doe", 28, 777.66, textures[..], "Gamburger Inspector", tmem);
+	if (should_write) {
+		int[*] textures = {5,4,3,2,1};
+		en.init(
+			"John_Doe",
+			28,
+			777.66,
+			textures[..],
+			"Gamburger Inspector",
+			tmem
+		);
 
-// 		serializer.serialize_to_text_and_save_to_file(&en, tmem, false, f_name, Entity.sizeof + en.textures.byte_size() + en.job_name.len() + $sizeof(*en.map.table[0]) * en.map.threshold);
-// 	}
+		serializer.serialize_to_text_and_save_to_file(
+			&en,
+			tmem,
+			false,
+			f_name,
+			Entity.sizeof
+			+ en.textures.byte_size()
+			+ en.job_name.len()
+			+ $sizeof(*en.map.table[0]) * en.map.threshold
+		);
+	}
 
-// 	serializer.deserialize_from_text(&en, tmem, f_name);
-// 	en.print();
-// }
+	serializer.deserialize_from_text(&en, tmem, f_name);
+	en.print();
+}
+
+// Implementation on complex structure (some part - stack, some part - heap)
+
+fn void Entity.init(
+	&entity,
+	String name,
+	int age,
+	double money,
+	int[] textures,
+	String job_name,
+	Allocator alloc = mem
+)
+{
+	entity.name.push_all(name);
+	entity.age = age;
+	entity.money = money;
+	entity.textures.init(alloc, textures.len);
+	entity.textures.push_all(textures);
+	entity.job_name.init(alloc, job_name.len);
+	entity.job_name.append_string(job_name);
+	entity.map.init_from_keys_and_values(alloc, { 1, 2, 3, 4 }, { 0.1f, 0.2f, 0.3f, 0.4f }, 20);
+}
+
+fn void Entity.print(&en)
+{
+	io::printfn("Entity name: %s, age: %d, money: %f, job_name: %s, textures_len: %d, map item count: %d, map third item: %f",
+		(String)en.name.array_view(),
+		en.age,
+		en.money,
+		en.job_name.str_view(),
+		en.textures.size,
+		en.map.count,
+		en.map.get(3)!!
+	);
+}
+
+// Serializable interface implementation for Entity struct
+// chunked serialization - 1. stack part; 2. list (heap); 3. dstring (heap); 4. hashmap (heap);
+
+fn void Entity.serialize_to_bin(&entity, Serializer* ser, Allocator alloc) @dynamic
+{
+	EntityStackPart stack_p;
+	stack_p.name = entity.name;
+	stack_p.age = entity.age;
+	stack_p.money = entity.money;
+	char[] stack_p_slice = util::ptr_to_byte_slice{EntityStackPart}(&stack_p);
+	
+	ser.append_bin_data_to_buff(stack_p_slice, alloc, false);
+	ser.serialize_to_bin(&entity.textures, alloc);
+	ser.serialize_to_bin(&entity.job_name, alloc);
+	ser.serialize_to_bin(&entity.map, alloc);
+}
+
+fn void Entity.deserialize_from_bin(&entity, ChunkIterator* chunk_it, Allocator alloc) @dynamic
+{
+	char[] first_chunk = chunk_it.next();
+	mem::copy((char*)entity, first_chunk.ptr, first_chunk.len);
+	entity.textures.deserialize_from_bin(chunk_it, alloc);
+	entity.job_name.deserialize_from_bin(chunk_it, alloc);
+	entity.map.deserialize_from_bin(chunk_it, alloc);
+}
+
+fn void Entity.serialize_to_text(&entity, Serializer* ser, Allocator alloc) @dynamic
+{
+	EntityStackPart stack_p;
+	stack_p.name = entity.name;
+	stack_p.age = entity.age;
+	stack_p.money = entity.money;
+	
+	ser.append_text_data_to_buff(&stack_p, alloc, false);
+	ser.serialize_to_text(&entity.textures, alloc, false, entity.textures.byte_size());
+	ser.serialize_to_text(&entity.job_name, alloc, false, entity.job_name.capacity() * char.sizeof);
+	ser.serialize_to_text(&entity.map, alloc, false, entity.map.threshold * $sizeof(*entity.map.table[0]));
+}
+
+fn void Entity.deserialize_from_text(&entity, Parser* parser, Allocator alloc, String file_path) @dynamic
+{
+	EntityStackPart stack_p;
+	parser.parse_struct(&stack_p);
+	entity.name = stack_p.name;
+	entity.age = stack_p.age;
+	entity.money = stack_p.money;
+	
+	parser.skip_until_next_value_start();
+	entity.textures.deserialize_from_text(parser, alloc, file_path);
+	parser.skip_until_next_value_start();
+	entity.job_name.deserialize_from_text(parser, alloc, file_path);
+	parser.skip_until_next_value_start();
+	entity.map.deserialize_from_text(parser, alloc, file_path);
+}

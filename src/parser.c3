@@ -176,7 +176,7 @@ macro void Parser.parse_array(&parser, out_array)
 		parser.parse_any(item);
 	}
 
-	parser.skip_until_after_curr_char(TokenChar.ARRAY_END);
+	parser.skip_until_array_end();
 }
 
 <*
@@ -209,7 +209,7 @@ macro void Parser.parse_struct(
 		$endif
 	$endforeach
 
-	parser.skip_until_after_curr_char(TokenChar.STRUCT_END);
+	parser.skip_until_struct_end();
 }
 
 <*
@@ -388,6 +388,16 @@ fn void Parser.parse_num_private(&parser, ElasticArray{char, MAX_DIGIT_LEN}* dig
 	assert(parser.curr > start, "Should be at least 1 digit in a number");
 	assert((parser.curr - start) < MAX_DIGIT_LEN, "Should be at most 32 characters");
 	digit_buff.push_all(parser.buff_view[start .. parser.curr - 1]);
+}
+
+fn void Parser.skip_until_struct_end(&parser)
+{
+	parser.skip_until_after_curr_char(TokenChar.STRUCT_END);
+}
+
+fn void Parser.skip_until_array_end(&parser)
+{
+	parser.skip_until_after_curr_char(TokenChar.ARRAY_END);
 }
 
 <*

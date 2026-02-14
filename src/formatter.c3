@@ -35,7 +35,8 @@ macro void Formatter.format_any(
 		$kind = $Type.kindof;
 	$endif
 
-	// var val = util::@deref_if_ptr(input_val);
+// NOTE: DEBUG
+	// io::printfn("value: %s kind: %s, $unwrap_dist: %s, $arr_as_str: %s", val, $kind, $unwrap_distinct, $parse_next_array_as_string);
 
  	$switch $kind:
 	$case DISTINCT:
@@ -49,10 +50,14 @@ macro void Formatter.format_any(
 		$endswitch
 	$case STRUCT:
 	$case BITSTRUCT:
-		f.format_struct(val, $indent_count, $top_level, $parse_next_array_as_string);
+		$if $Type.has_tagof(CustomFmtTag.STRUCT_STRING):
+			f.format_struct(val, $indent_count, $top_level, true);
+		$else
+			f.format_struct(val, $indent_count, $top_level, $parse_next_array_as_string);
+		$endif
 	$case ARRAY:
 	$case SLICE:
-		$if $parse_next_array_as_string:
+		$if $parse_next_array_as_string || $Type.has_tagof(CustomFmtTag.SLICE_STRING):
 			f.format_string(val, $indent_count, $top_level);
 		$else
 			f.format_array(val, $indent_count, $top_level);
@@ -107,7 +112,8 @@ macro void Formatter.format_primitive(
 
 <*
 	Introspect a struct and print it to a formatter
-	@require util::@is_kindof_val(val, STRUCT, BITSTRUCT, DISTINCT) : `This macro is only valid on STRUCT, BITSTRUCT or DISTINCT`
+	@require util::@is_kindof_val(val, STRUCT, BITSTRUCT, DISTINCT, POINTER)
+		: "TypeKind should be one of: STRUCT, BITSTRUCT, DISTINCT, POINTER"
 *>
 macro void Formatter.format_struct(
 	&f,
@@ -119,7 +125,7 @@ macro void Formatter.format_struct(
 {
 	String $base_indent_s = @get_indent($indent_count);
 	String $inner_indent_s = $base_indent_s +++ INDENT_SYMBOL;
-	var $Type = $typeof(val); 
+	var $Type = util::@get_pointee_type_val(val); 
 
 	$if $top_level:
 	    f.print("\n" +++ $base_indent_s +++ "{\n")!!;
@@ -133,8 +139,8 @@ macro void Formatter.format_struct(
         $endif
         $if $member.nameof != "":
             f.printf($inner_indent_s +++ "; %s\n", $member.nameof)!!;
+			f.format_any(val.$eval($member.nameof), $indent_count + 1, false, false, $parse_next_array_as_string);
 		$endif
-		f.format_any($member.get(val), $indent_count + 1, false, false, $parse_next_array_as_string);
 	$endforeach
 
 	f.print("\n" +++ $base_indent_s +++ "}")!!;
@@ -146,7 +152,8 @@ macro void Formatter.format_struct(
 
 <*
 	Introspect an array and print it to a formatter
-	@require util::@is_kindof_val(val, ARRAY, SLICE, DISTINCT) : "Should be ARRAY or SLICE"
+	@require util::@is_kindof_val(val, ARRAY, SLICE, DISTINCT, POINTER)
+		: "TypeKind should be one of: ARRAY, SLICE, DISTINCT"
 *>
 macro void Formatter.format_array(
 	&f,
@@ -178,8 +185,9 @@ macro void Formatter.format_array(
 }
 
 <*
-	Introspect an array and print it to a formatter
-	@require util::is_kindof($typeof(val), ARRAY, SLICE, DISTINCT) : "Should be ARRAY or SLICE"
+	Introspect an string and print it to a formatter
+	@require util::is_kindof($typeof(val), ARRAY, SLICE, DISTINCT)
+		: "TypeKind should be one of: ARRAY, SLICE, DISTINCT"
 	@require util::@get_innermost_type_val(val) == char : "Should be char as underlying type"
 *>
 macro void Formatter.format_string(
@@ -197,9 +205,7 @@ macro void Formatter.format_string(
 	    f.print($indent_str +++ "\"")!!;
 	$endif
 
-	f.printf("%s", (String)val[..])!!;
-
-	f.print("\"")!!;
+	f.printf("%s\"", (String)val[..])!!;
 
 	$if $top_level:
 		f.print("\n")!!;

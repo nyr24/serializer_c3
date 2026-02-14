@@ -47,7 +47,11 @@ fn String nullterm_str_to_slice(CChar* s) {
 
 fn char[] to_byte_slice(Type[] val) <Type>
 {
-	return ((char*)val.ptr)[:val.len * Type.sizeof];
+	$if Type == char:
+		return val;
+	$else
+		return ((char*)val.ptr)[:val.len * Type.sizeof];
+	$endif
 }
 
 fn Type[] from_byte_slice(char[] val) <Type>
@@ -62,5 +66,5 @@ fn Type[] ptr_to_slice(Type* val) <Type>
 
 fn char[] ptr_to_byte_slice(Type* val) <Type>
 {
-	return to_byte_slice{Type}(val[:1]);
+	return to_byte_slice(val[:1]);
 }

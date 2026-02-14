@@ -4,12 +4,13 @@ import libc;
 import std::collections::elastic_array;
 import util;
 import std::math;
-// NOTE: DEBUG
-// import std::io;
+import std::io;
 
 const MAX_STR_LEN   = 64;
 const MAX_DIGIT_LEN = 32;
+const MAX_COMMENT_LEN = 64;
 alias SkipCallback  = fn bool(char);
+alias CommentString = ElasticArray{char, MAX_COMMENT_LEN};
 
 /* Example format
 	; field_name
@@ -50,32 +51,43 @@ enum BoolAsString : const inline char[]
 	FALSE = "false",
 }
 
-fn void Parser.init(&parser, char[] data) @private
+fn void Parser.init(&parser, char[] data)
 {
 	parser.buff_view = data;
 	parser.curr = 0;
 	parser.end = data.len - 1;
 	parser.curr_line = 0;
+	parser.skip_ws();
+}
+
+fn void Parser.reset(&parser)
+{
+	mem::set(parser, 0, Parser.sizeof);
+}
+
+fn bool Parser.is_initialized(&parser)
+{
+	return parser.buff_view.ptr && parser.buff_view.len > 0;
 }
 
 <*
 	@require util::is_kindof($typeof(out_val), POINTER, SLICE) : "Should be a pointer or slice"
 *>
-macro void Parser.start(&parser, out_val) @private
+macro void Parser.parse_recur_into(&parser, out_val)
 {
 	parser.parse_any(out_val);
 }
 
+// @require !util::is_ptr_to_ptr($typeof(out_val)) : "Should not be a pointer to pointer"
 <*
 	@require util::is_kindof($typeof(out_val), POINTER, SLICE) : "Should be a pointer or slice"
-	@require !util::is_ptr_to_ptr($typeof(out_val)) : "Should not be a pointer to pointer"
 *>
 macro void Parser.parse_any(
 	&parser,
 	out_val,
 	bool $unwrap_distinct = false,
 	bool $parse_next_array_as_string = false,
-) @private
+)
 {
 	parser.skip_ws();
 
@@ -98,7 +110,7 @@ macro void Parser.parse_any(
 	$endif
 
 // NOTE: DEBUG
-	// io::printfn("curr char: %c, val: %s, kind: %s, $unwrap_dist: %s, $arr_as_str: %s", parser.curr_char(), out_val, $kind, $unwrap_distinct, $parse_next_array_as_string);
+	// io::printfn("curr char: %c, index: %d remain_distance: %d kind: %s, $unwrap_dist: %s, $arr_as_str: %s", parser.curr_char(), parser.curr, parser.end - parser.curr, $kind, $unwrap_distinct, $parse_next_array_as_string);
 
 	$switch ($kind):
 	$case DISTINCT:
@@ -107,12 +119,21 @@ macro void Parser.parse_any(
 			parser.parse_any(out_val, true, true);
 		$case $Type.has_tagof(CustomFmtTag.STRUCT_STRING):
 			parser.parse_any(out_val, true, true);
+	// TODO: different string handling method
+		// $case $Type == DString:
+		// 	parser.parse_any(out_val, true, true);
+		// $case $Type == String:
+		// 	parser.parse_any(out_val, true, true);
 		$default:
 			parser.parse_any(out_val, true);
 		$endswitch
 	$case STRUCT:
 	$case BITSTRUCT:
-		parser.parse_struct(out_val, $parse_next_array_as_string);
+		$if $Type.has_tagof(CustomFmtTag.STRUCT_STRING):
+			parser.parse_struct(out_val, true);
+		$else
+			parser.parse_struct(out_val, $parse_next_array_as_string);
+		$endif
 	$case ARRAY:
 		$if $parse_next_array_as_string:
 			parser.parse_string(out_val[:out_val.len]);
@@ -120,7 +141,7 @@ macro void Parser.parse_any(
 			parser.parse_array(out_val[:out_val.len]);
 		$endif
 	$case SLICE:
-		$if $parse_next_array_as_string:
+		$if $parse_next_array_as_string || $Type.has_tagof(CustomFmtTag.SLICE_STRING):
 			parser.parse_string(out_val);
 		$else
 			parser.parse_array(out_val);
@@ -146,7 +167,7 @@ macro void Parser.parse_any(
 	@require util::is_kindof($typeof(out_array), SLICE, POINTER) : "Should be a slice or pointer to array"
 	@require parser.curr_char() == TokenChar.ARRAY_START : "Should be at the start of array"
 *>
-macro void Parser.parse_array(&parser, out_array) @private
+macro void Parser.parse_array(&parser, out_array)
 {
 	parser.next();
 	assert(!parser.is_at_end(), "Shouldn't be at the end here");
@@ -166,7 +187,7 @@ macro void Parser.parse_struct(
 	&parser,
 	out_value,
 	bool $parse_next_array_as_string = false,
-) @private
+)
 {
 	parser.next();
 	assert(!parser.is_at_end(), "Shouldn't be at the end here");
@@ -196,7 +217,7 @@ macro void Parser.parse_struct(
 	@require parser.end - parser.curr > 1 : "Buffer shouldn't end with a quote"
 	@require parser.next_char().is_alpha() : "Next symbol should be an ascii letter [a-zA-Z]"
 *>
-macro void Parser.parse_string(&parser, out_str) @private
+macro void Parser.parse_string(&parser, out_str)
 {
 	// step after opening quote
 	parser.next();
@@ -215,14 +236,14 @@ macro void Parser.parse_string(&parser, out_str) @private
 	@require parser.end - parser.curr >= "true".len : "Buffer should have enough space"
 	@require parser.next_char().is_alpha() : "Next symbol should be an ascii letter [a-zA-Z]"
 *>
-fn void Parser.parse_boolean(&parser, bool* out_bool) @private
+fn void Parser.parse_boolean(&parser, bool* out_bool)
 {
 	usz start = parser.curr;
-	parser.move_until_value_end();
+	char[] bool_value =  parser.read_until_value_end();
 	assert(parser.curr > start, "Should move at least 1 character");
 	assert(parser.curr - start >= "true".len, "Should move at least 4 characters");
 
-	char[] bool_value = parser.buff_view[start .. parser.curr - 1];
+	// char[] bool_value = parser.buff_view[start .. parser.curr - 1];
 	if (mem::equals((char[])BoolAsString.TRUE, bool_value)) {
 		*out_bool = true;
 	}
@@ -230,7 +251,7 @@ fn void Parser.parse_boolean(&parser, bool* out_bool) @private
 		*out_bool = false;
 	}
 	else {
-		unreachable("unrecognized value for boolean: %s", bool_value);
+		unreachable("unrecognized value for boolean: %s", (String)bool_value);
 	}
 }
 
@@ -239,7 +260,7 @@ fn void Parser.parse_boolean(&parser, bool* out_bool) @private
 	@require $typeof(out_value).kindof == POINTER : "Should be a pointer"
 	@require parser.curr_char().is_digit() || is_digit_sign(parser.curr_char()) : "Character we currently on should be either a digit or a sign"
 *>
-macro void Parser.parse_number(&parser, out_value) @private
+macro void Parser.parse_number(&parser, out_value)
 {
 	ElasticArray{char, MAX_DIGIT_LEN} digit_buff;
 	parser.parse_num_private(&digit_buff);
@@ -270,7 +291,7 @@ macro void Parser.parse_number(&parser, out_value) @private
 	@require $typeof(out_value).kindof == POINTER : "Should be a pointer"
 	@require parser.curr_char().is_digit() : "Character we currently on should be either a digit or a sign"
 *>
-macro void Parser.parse_const_enum(&parser, out_value) @private
+macro void Parser.parse_const_enum(&parser, out_value)
 {
 	ElasticArray{char, MAX_DIGIT_LEN} digit_buff;
 	parser.parse_num_private(&digit_buff);
@@ -295,7 +316,7 @@ macro void Parser.parse_const_enum(&parser, out_value) @private
 	@require $typeof(out_value).kindof == POINTER : "Should be a pointer"
 	@require parser.curr_char().is_digit() : "Character we currently on should be either a digit or a sign"
 *>
-macro void Parser.parse_plain_enum(&parser, out_value) @private
+macro void Parser.parse_plain_enum(&parser, out_value)
 {
 	ElasticArray{char, MAX_DIGIT_LEN} digit_buff;
 	parser.parse_num_private(&digit_buff);
@@ -316,7 +337,33 @@ macro void Parser.parse_plain_enum(&parser, out_value) @private
 	$endswitch
 }
 
-macro void Parser.parse_num_private(&parser, ElasticArray{char, MAX_DIGIT_LEN}* digit_buff) @local
+fn void Parser.skip_comment(&parser)
+{
+	parser.skip_ws();
+	if (parser.curr_char() != TokenChar.COMMENT) {
+		return;
+	}
+	parser.skip_line();
+	parser.skip_ws();
+}
+
+<*
+	@require out_comment_value.size == 0 : "Should have zero values"
+*>
+fn char[] Parser.read_comment(&parser, CommentString* out_comment_value)
+{
+	if (parser.curr_char() != TokenChar.COMMENT) {
+		return {};
+	}
+
+	parser.next();
+	parser.skip_ws();
+	char[] value = parser.read_while_curr_char_cb(&ascii::is_alpha);
+	parser.skip_ws();
+	return value;
+}
+
+fn void Parser.parse_num_private(&parser, ElasticArray{char, MAX_DIGIT_LEN}* digit_buff) @local
 {
 	usz start = parser.curr;
 	bool is_digit = false;
@@ -362,15 +409,43 @@ fn bool Parser.skip_ws(&parser) @private
 	return true;
 }
 
+<*
+	Returns true if end reached
+*>
+fn bool Parser.skip_ws_or_comma(&parser) @private
+{
+	while (parser.curr < parser.end)
+	{
+		char c = parser.curr_char();
+		if (!is_space_or_comma(c)) {
+			return false;
+		}
+		if (c == '\n') {
+			parser.curr_line++;
+		}
+		parser.next();
+	}
+	return true;
+}
+
 fn bool Parser.skip_line(&parser) @private
 {
 	parser.skip_until_after_curr_char('\n');
 	return parser.is_at_end();
 }
 
-fn void Parser.move_until_value_end(&parser) @private
+fn char[] Parser.read_until_value_end(&parser) @private
 {
+	usz start = parser.curr;
 	parser.skip_until_curr_char_cb(&is_space_or_comma);
+	return parser.buff_view[start : parser.curr - start];
+}
+
+fn void Parser.skip_until_next_value_start(&parser) @private
+{
+	parser.skip_ws_or_comma();
+	parser.skip_comment();
+	parser.skip_ws();
 }
 
 fn void Parser.skip_until_curr_char(&parser, char c) @private
@@ -404,6 +479,32 @@ fn void Parser.skip_until_curr_char_cb(&parser, SkipCallback cb) @private
 	{
 		parser.next();
 	}
+}
+
+fn char[] Parser.read_until_curr_char_cb(&parser, SkipCallback cb) @private
+{
+	usz start = parser.curr;
+	while (parser.curr < parser.end && !cb(parser.curr_char()))
+	{
+		parser.next();
+	}
+	return parser.buff_view[start : parser.curr - start];
+}
+
+fn char[] Parser.read_while_curr_char_cb(&parser, SkipCallback cb) @private
+{
+	usz start = parser.curr;
+	while (parser.curr < parser.end && cb(parser.curr_char()))
+	{
+		parser.next();
+	}
+	return parser.buff_view[start : parser.curr - start];
+}
+
+fn void Parser.debug_view(&parser, usz len = 50) @if(env::COMPILER_OPT_LEVEL.ordinal == 0)
+{
+	len = math::min(len, (usz)(parser.end - parser.curr + 1));
+	io::printfn("Parser: closest values in buffer:\n\t%s", (String)parser.buff_view[parser.curr:len]);
 }
 
 fn char Parser.curr_char(&parser) @private @inline

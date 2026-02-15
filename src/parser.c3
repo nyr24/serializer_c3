@@ -71,17 +71,24 @@ fn bool Parser.is_initialized(&parser)
 }
 
 <*
-	@require util::is_kindof($typeof(out_val), POINTER, SLICE) : "Should be a pointer or slice"
+	High level wrapper over 'parse_any'
+*>
+macro void Parser.parse_curr_value_and_skip_to_next(&parser, out_val, bool is_last = false)
+{
+	parser.parse_recur_into(out_val);
+	if (!is_last) {
+		parser.skip_until_next_value_start();
+	}
+}
+
+<*
+	High level wrapper over 'parse_any'
 *>
 macro void Parser.parse_recur_into(&parser, out_val)
 {
 	parser.parse_any(out_val);
 }
 
-// @require !util::is_ptr_to_ptr($typeof(out_val)) : "Should not be a pointer to pointer"
-<*
-	@require util::is_kindof($typeof(out_val), POINTER, SLICE) : "Should be a pointer or slice"
-*>
 macro void Parser.parse_any(
 	&parser,
 	out_val,
@@ -119,11 +126,10 @@ macro void Parser.parse_any(
 			parser.parse_any(out_val, true, true);
 		$case $Type.has_tagof(CustomFmtTag.STRUCT_STRING):
 			parser.parse_any(out_val, true, true);
-	// TODO: different string handling method
-		// $case $Type == DString:
-		// 	parser.parse_any(out_val, true, true);
-		// $case $Type == String:
-		// 	parser.parse_any(out_val, true, true);
+		$case $Type == DString:
+			parser.parse_any(out_val, true, true);
+		$case $Type == String:
+			parser.parse_any(out_val, true, true);
 		$default:
 			parser.parse_any(out_val, true);
 		$endswitch
@@ -159,8 +165,10 @@ macro void Parser.parse_any(
 	$default:
 		unreachable("Unsupported type for parsing: %s, value: %s", $Type, out_val);
 	$endswitch
-
-	parser.skip_line();
+	
+	if (parser.skip_until_next_value_start()) {
+		return;
+	}
 }
 
 <*
@@ -221,12 +229,10 @@ macro void Parser.parse_string(&parser, out_str)
 {
 	// step after opening quote
 	parser.next();
-	usz start = parser.curr;
-	parser.skip_until_next_char('\"');
-	usz acquired_len = parser.curr - start + 1;
-	assert(parser.curr > start, "Should move at least 1 character");
-	assert((acquired_len <= out_str.len), "Should not exceed out_str.len");
-	mem::copy(out_str, parser.buff_view.ptr + start, acquired_len);
+	char[] contents = parser.read_until_curr_char('\"');
+	assert(contents.len > 0, "Should move at least 1 character");
+	assert((contents.len <= out_str.len), "Should not exceed out_str.len");
+	mem::copy(out_str, contents.ptr, contents.len);
 	// step after closing quote
 	parser.next();
 }
@@ -239,7 +245,7 @@ macro void Parser.parse_string(&parser, out_str)
 fn void Parser.parse_boolean(&parser, bool* out_bool)
 {
 	usz start = parser.curr;
-	char[] bool_value =  parser.read_until_value_end();
+	char[] bool_value = parser.read_until_value_end();
 	assert(parser.curr > start, "Should move at least 1 character");
 	assert(parser.curr - start >= "true".len, "Should move at least 4 characters");
 
@@ -451,11 +457,30 @@ fn char[] Parser.read_until_value_end(&parser) @private
 	return parser.buff_view[start : parser.curr - start];
 }
 
-fn void Parser.skip_until_next_value_start(&parser) @private
+fn bool Parser.skip_until_next_value_start(&parser) @private
 {
-	parser.skip_ws_or_comma();
-	parser.skip_comment();
-	parser.skip_ws();
+	if (parser.curr < parser.end) {
+		char c = parser.curr_char();
+		while (parser.curr < parser.end) {
+			if (!ascii::is_space(c) && c != TokenChar.COMMA && c != TokenChar.COMMENT) {
+				break;
+			}
+			parser.skip_ws_or_comma();
+			parser.skip_comment();
+			c = parser.curr_char();
+		}
+	}
+	return parser.is_at_end();
+}
+
+fn char[] Parser.read_until_curr_char(&parser, char c) @private
+{
+	usz start = parser.curr;
+	while (parser.curr < parser.end && parser.curr_char() != c)
+	{
+		parser.next();
+	}
+	return parser.buff_view[start : parser.curr - start];
 }
 
 fn void Parser.skip_until_curr_char(&parser, char c) @private
@@ -480,7 +505,9 @@ fn void Parser.skip_until_after_curr_char(&parser, char c) @private
 	{
 		parser.next();
 	}
-	parser.next();
+	if (parser.curr < parser.end) {
+		parser.next();
+	}
 }
 
 fn void Parser.skip_until_curr_char_cb(&parser, SkipCallback cb) @private

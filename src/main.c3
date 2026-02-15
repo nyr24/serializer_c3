@@ -169,9 +169,9 @@ fn void example_simple(Serializer* serializer, bool should_write)
 
 	if (should_write) {
 		St[3] s_ces;
-		s_ces[0].init("hello", 13, 228.5f);
-		s_ces[1].init("world", 95, 1773.5f);
-		s_ces[2].init("third", 7785, 56.0631);
+		s_ces[0].init("sim_1", 8, 16.0f, true, "iner1", GOBLIN);
+		s_ces[1].init("sim_2", 16, 32.0f, false, "iner2", TROLL);
+		s_ces[2].init("sim_3", 32, 64.0f, false, "iner3", MONSTER);
 
 		serializer.append_bin_data_to_buff_and_save_file(util::to_byte_slice{St}(s_ces[..]), mem, false, f_name);
 	}
@@ -407,7 +407,7 @@ fn void Entity.print(&en)
 // Serializable interface implementation for Entity struct
 // chunked serialization - 1. stack part; 2. list (heap); 3. dstring (heap); 4. hashmap (heap);
 
-fn void Entity.serialize_to_bin(&entity, Serializer* ser, Allocator alloc) @dynamic
+fn void Entity.serialize_to_bin(&entity, Serializer* ser, Allocator alloc)
 {
 	EntityStackPart stack_p;
 	stack_p.name = entity.name;
@@ -421,7 +421,7 @@ fn void Entity.serialize_to_bin(&entity, Serializer* ser, Allocator alloc) @dyna
 	ser.serialize_to_bin(&entity.map, alloc);
 }
 
-fn void Entity.deserialize_from_bin(&entity, ChunkIterator* chunk_it, Allocator alloc) @dynamic
+fn void Entity.deserialize_from_bin(&entity, ChunkIterator* chunk_it, Allocator alloc)
 {
 	char[] first_chunk = chunk_it.next();
 	mem::copy((char*)entity, first_chunk.ptr, first_chunk.len);
@@ -430,7 +430,7 @@ fn void Entity.deserialize_from_bin(&entity, ChunkIterator* chunk_it, Allocator 
 	entity.map.deserialize_from_bin(chunk_it, alloc);
 }
 
-fn void Entity.serialize_to_text(&entity, Serializer* ser, Allocator alloc) @dynamic
+fn void Entity.serialize_to_text(&entity, Serializer* ser, Allocator alloc)
 {
 	EntityStackPart stack_p;
 	stack_p.name = entity.name;
@@ -443,7 +443,7 @@ fn void Entity.serialize_to_text(&entity, Serializer* ser, Allocator alloc) @dyn
 	ser.serialize_to_text(&entity.map, alloc, false, entity.map.threshold * $sizeof(*entity.map.table[0]));
 }
 
-fn void Entity.deserialize_from_text(&entity, Parser* parser, Allocator alloc, String file_path) @dynamic
+fn void Entity.deserialize_from_text(&entity, Parser* parser, Allocator alloc, String file_path)
 {
 	EntityStackPart stack_p;
 	parser.parse_struct(&stack_p);

@@ -68,6 +68,9 @@ fn void List.serialize_to_text(&list, Serializer* ser, Allocator alloc)
 	ser.append_text_data_to_buff(ser_repr, alloc, true, ListSerializedText.sizeof + list.size * Type.sizeof);
 }
 
+<*
+	@require parser.curr_char() == TokenChar.STRUCT_START : "Should be at '{' symbol at the moment of call"
+*>
 fn void List.deserialize_from_text(&list, Parser* parser, Allocator alloc, String file_path)
 {
 	parser.next();
@@ -79,6 +82,7 @@ fn void List.deserialize_from_text(&list, Parser* parser, Allocator alloc, Strin
 	Type[] entries = allocator::alloc_array(alloc, Type, list.capacity); 
 	parser.parse_array(entries[:list.size]);
 	list.entries = entries.ptr;
+	list.allocator = alloc;
 	parser.skip_until_struct_end();
 }
 
@@ -152,6 +156,9 @@ fn void DString.serialize_to_text(&dstring, Serializer* ser, Allocator alloc)
 	ser.append_text_data_to_buff(ser_repr, alloc, true, DStringSerializedText.sizeof + str_data.len * char.sizeof);
 }
 
+<*
+	@require parser.curr_char() == TokenChar.STRUCT_START : "Should be at '{' symbol at the moment of call"
+*>
 fn void DString.deserialize_from_text(&dstring, Parser* parser, Allocator alloc, String file_path)
 {
 	usz len;
@@ -162,10 +169,11 @@ fn void DString.deserialize_from_text(&dstring, Parser* parser, Allocator alloc,
 	parser.skip_until_next_value_start();
 	parser.parse_number(&capacity);
 
-	StringData* data = dstring.data();
-	data = allocator::alloc_with_padding(alloc, StringData, capacity)!!;
+	StringData* data = allocator::alloc_with_padding(alloc, StringData, capacity)!!;
 	data.len = len;
 	data.capacity = capacity;
+	data.allocator = alloc;
+	*dstring = (DString)data;
 
 	parser.skip_until_next_value_start();
 	parser.parse_string(data.chars[:data.len]);
@@ -207,7 +215,6 @@ fn void HashMap.serialize_to_bin(&map, Serializer* ser, Allocator alloc)
 	ser_map.count = map.count;
 	ser_map.threshold = map.threshold;
 	ser_map.load_factor = map.load_factor;
-// TODO: can we do this in 1 pass (alignment is possible issue)
 	ser.append_bin_data_to_buff(util::ptr_to_byte_slice{HashMapSerializedBin}(&ser_map), alloc, false);
 	if (ser_map.count > 0) {
 		ser.append_bin_data_to_buff(util::to_byte_slice{Key}(keys), alloc, true);
@@ -246,6 +253,9 @@ fn void HashMap.serialize_to_text(&map, Serializer* ser, Allocator alloc)
 	ser.append_text_data_to_buff(ser_map, alloc, true, HashMapSerializedText.sizeof + $sizeof(*map.table[0]) * map.count);
 }
 
+<*
+	@require parser.curr_char() == TokenChar.STRUCT_START : "Should be at '{' symbol at the moment of call"
+*>
 fn void HashMap.deserialize_from_text(&map, Parser* parser, Allocator alloc, String file_path)
 {
 	parser.next();

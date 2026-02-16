@@ -89,6 +89,7 @@ macro void Serializer.serialize_to_bin(
 	&ser,
 	val,
 	Allocator alloc,
+	bool should_free_memory = false,
 )
 {
 	$if implements_serializable_to_bin(util::@get_pointee_type_val(val)):
@@ -98,7 +99,7 @@ macro void Serializer.serialize_to_bin(
 		$if util::is_kindof($Type, SLICE, ARRAY, POINTER):
 			$Type = $Type.inner;
 		$endif
-		ser.append_bin_data_to_buff(util::to_byte_slice{$Type}(val), alloc, should_free);
+		ser.append_bin_data_to_buff(util::to_byte_slice{$Type}(val), alloc, should_free_memory);
 	$endif
 }
 
@@ -107,9 +108,10 @@ macro void Serializer.serialize_to_bin_and_save_to_file(
 	val,
 	Allocator alloc,
 	String file_path,
+	bool should_free_memory = false,
 )
 {
-	ser.serialize_to_bin(val, alloc);
+	ser.serialize_to_bin(val, alloc, should_free_memory);
 	ser.save_serialized_data_to_file(file_path, BIN);
 }
 
@@ -117,7 +119,7 @@ fn void Serializer.append_bin_data_to_buff(
 	&ser,
 	char[] data,
 	Allocator alloc,
-	bool should_free_memory,
+	bool should_free_memory = false,
 )
 {
 	bool first_chunk = ser.buff.size == 0;
@@ -136,8 +138,8 @@ fn void Serializer.append_bin_data_to_buff_and_save_file(
 	&ser,
 	char[] data,
 	Allocator alloc,
-	bool should_free_memory,
 	String file_path,
+	bool should_free_memory = false,
 ) @private
 {
 	ser.append_bin_data_to_buff(data, alloc, should_free_memory);
@@ -158,17 +160,21 @@ macro void Serializer.deserialize_from_bin(
 	String file_path,
 )
 {
-	if (!ser.chunk_it.is_initialized()) {
-		usz contents_len = ser.read_file_into_buffer(BIN, file_path);
-		ser.chunk_it.init(ser, contents_len);
-	}
-	val.deserialize_from_bin(&ser.chunk_it, alloc);
+	$if implements_serializable_to_bin(util::@get_pointee_type_val(val)):
+		if (!ser.chunk_it.is_initialized()) {
+			usz contents_len = ser.read_file_into_buffer(BIN, file_path);
+			ser.chunk_it.init(ser, contents_len);
+		}
+		val.deserialize_from_bin(&ser.chunk_it, alloc);
+	$else
+		ser.acquire_bin_data_from_file(alloc, file_path);
+	$endif
 }
 
 <*
 	Caller must free the data
 *>
-fn char[] Serializer.acquire_bin_data_from_file(&ser, String file_path, Allocator alloc)
+fn char[] Serializer.acquire_bin_data_from_file(&ser, Allocator alloc, String file_path)
 {
 	usz contents_len = ser.read_file_into_buffer(BIN, file_path);
 	char[] buff_view = ser.buff.view_range_len(FileHeader.sizeof + ChunkHeader.sizeof, contents_len - ChunkHeader.sizeof);
@@ -235,7 +241,7 @@ macro void Serializer.serialize_to_text(
 	&ser,
 	val,
 	Allocator alloc,
-	bool should_free_memory,
+	bool should_free_memory = false,
 	usz assumed_serialized_data_size = 0,
 )
 {
@@ -254,8 +260,8 @@ macro void Serializer.serialize_to_text_and_save_to_file(
 	&ser,
 	val,
 	Allocator alloc,
-	bool should_free_memory,
 	String file_path,
+	bool should_free_memory = false,
 	usz assumed_serialized_data_size = 0,
 )
 {
@@ -267,7 +273,7 @@ macro void Serializer.append_text_data_to_buff(
 	&ser,
 	data,
 	Allocator alloc,
-	bool should_free_memory,
+	bool should_free_memory = false,
 	usz assumed_serialized_data_size = 0,
 )
 {

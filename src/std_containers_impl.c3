@@ -73,7 +73,7 @@ fn void List.serialize_to_text(&list, Serializer* ser, Allocator alloc)
 *>
 fn void List.deserialize_from_text(&list, Parser* parser, Allocator alloc, String file_path)
 {
-	parser.next();
+	parser.step();
 	parser.skip_until_next_value_start();
 	parser.parse_number(&list.size);
 	parser.skip_until_next_value_start();
@@ -163,7 +163,7 @@ fn void DString.deserialize_from_text(&dstring, Parser* parser, Allocator alloc,
 {
 	usz len;
 	usz capacity;
-	parser.next();
+	parser.step();
 	parser.skip_until_next_value_start();
 	parser.parse_number(&len);
 	parser.skip_until_next_value_start();
@@ -258,7 +258,7 @@ fn void HashMap.serialize_to_text(&map, Serializer* ser, Allocator alloc)
 *>
 fn void HashMap.deserialize_from_text(&map, Parser* parser, Allocator alloc, String file_path)
 {
-	parser.next();
+	parser.step();
 	parser.skip_until_next_value_start();
 	parser.parse_number(&map.count);
 	parser.skip_until_next_value_start();

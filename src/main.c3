@@ -7,64 +7,7 @@ import std::collections::elastic_array;
 import std::collections::list;
 import std::collections::map;
 import std::hash::fnv64a;
-
-alias StackString = ElasticArray{char, 32};
-
-// Mark type to treat it as string, not array of bytes and format differently
-typedef MyString @tag(CustomFmtTag.SLICE_STRING, 1) = char[5];
-typedef MyCompositeString @tag(CustomFmtTag.STRUCT_STRING, 1) = ElasticArray{char, 5};
-
-fn void MyCompositeString.init(&self, String str)
-{
-	mem::copy(&self.entries, str.ptr, str.len);
-	self.size = str.len;
-}
-
-fn uint MyCompositeString.hash(&self)
-{
-	return (uint)fnv64a::hash(self.entries[:self.size]);
-}
-
-struct St (Printable)
-{
-	MyCompositeString name;
-	int         age;
-	float       money;
-	bool		is_married;
-	Inner		inner;
-}
-
-typedef StDistinct = St;
-
-enum InnerType
-{
-	MONSTER,
-	TROLL,
-	GOBLIN
-}
-
-struct Inner (Printable)
-{
-	MyString 	name;
-	InnerType 	type;
-}
-
-struct Entity @tag(CustomFmtTag.STRUCT_STRING, 1)
-{
-	StackString name;
-	int         age;
-	double      money;
-	List{int}   textures;
-	DString     job_name;
-	HashMap{int, float} map;
-}
-
-struct EntityStackPart
-{
-	StackString name;
-	int         age;
-	double      money;
-}
+import std::math;
 
 fn int main(String[] args)
 {
@@ -72,11 +15,13 @@ fn int main(String[] args)
 	serializer.init(mem);
 	defer serializer.destroy();
 
-	const EXAMPLE_SIMPLE = true;
-	const EXAMPLE_LIST = true;
-	const EXAMPLE_DSTRING = true;
-	const EXAMPLE_ENTITY = true;
+	const EXAMPLE_BIN_SIMPLE = true;
+	const EXAMPLE_BIN_MATH = true;
+	const EXAMPLE_BIN_LIST = true;
+	const EXAMPLE_BIN_DSTRING = true;
+	const EXAMPLE_BIN_ENTITY = true;
 	const EXAMPLE_TEXT_SIMPLE = true;
+	const EXAMPLE_TEXT_MATH = true;
 	const EXAMPLE_TEXT_LIST = true;
 	const EXAMPLE_TEXT_DSTRING = true;
 	const EXAMPLE_TEXT_HASHMAP = true;
@@ -84,24 +29,32 @@ fn int main(String[] args)
 
 	bool should_write = args.len > 1;
 
-	if (EXAMPLE_SIMPLE) {
-		example_simple(&serializer, should_write);
+	if (EXAMPLE_BIN_SIMPLE) {
+		example_bin_simple(&serializer, should_write);
 	}
 
-	if (EXAMPLE_LIST) {
-		example_list(&serializer, should_write);
+	if (EXAMPLE_BIN_MATH) {
+		example_bin_math(&serializer, should_write);
 	}
 
-	if (EXAMPLE_DSTRING) {
-		example_dstring(&serializer, should_write);
+	if (EXAMPLE_BIN_LIST) {
+		example_bin_list(&serializer, should_write);
 	}
 
-	if (EXAMPLE_ENTITY) {
-		example_entity(&serializer, should_write);
+	if (EXAMPLE_BIN_DSTRING) {
+		example_bin_dstring(&serializer, should_write);
+	}
+
+	if (EXAMPLE_BIN_ENTITY) {
+		example_bin_entity(&serializer, should_write);
 	}
 
 	if (EXAMPLE_TEXT_SIMPLE) {
 		example_text_simple(&serializer, should_write);
+	}
+
+	if (EXAMPLE_TEXT_MATH) {
+		example_text_math(&serializer, should_write);
 	}
 
 	if (EXAMPLE_TEXT_LIST) {
@@ -123,47 +76,11 @@ fn int main(String[] args)
 	return 0;
 }
 
-// Examples
-
-fn void St.init(&new, char[5]* name, int age, float money, bool is_married = true, char[] inner_name = "inner1", InnerType inner_type = TROLL)
-{
-	mem::copy(&new.name.entries, name, name.len);
-	new.name.size = name.len;
-	new.age = age;
-	new.money = money;
-	new.is_married = is_married;
-	new.inner.init(inner_name, inner_type);
-}
-
-fn usz? St.to_format(&s, Formatter* f) @dynamic
-{
-	usz sz = f.printf("\n\tSt: %s %d %f %s ", (String)s.name.entries[..], s.age, s.money, s.is_married)!;
-	s.inner.print();
-	return sz;
-}
-
-fn void St.print(&s)
-{
-	io::printfn("St: %s %d %f %s", (String)s.name.entries[..], s.age, s.money, s.is_married);
-	s.inner.print();
-}
-
-fn void Inner.init(&inner, char[] name, InnerType type)
-{
-	mem::copy(&inner.name, name.ptr, inner.name.len);
-	inner.type = type;
-}
-
-fn void Inner.print(&inner)
-{
-	io::printf("\tInner: %s %s\n", (String)inner.name[..], inner.type);
-}
-
 // EXAMPLES
 
 // Binary serialization
 
-fn void example_simple(Serializer* serializer, bool should_write)
+fn void example_bin_simple(Serializer* serializer, bool should_write)
 {
 	String f_name = ser::acquire_file_fmt_name("example.simple", BIN);
 
@@ -173,10 +90,10 @@ fn void example_simple(Serializer* serializer, bool should_write)
 		s_ces[1].init("sim_2", 16, 32.0f, false, "iner2", TROLL);
 		s_ces[2].init("sim_3", 32, 64.0f, false, "iner3", MONSTER);
 
-		serializer.append_bin_data_to_buff_and_save_file(util::to_byte_slice{St}(s_ces[..]), mem, false, f_name);
+		serializer.serialize_to_bin_and_save_to_file(util::to_byte_slice{St}(s_ces[..]), mem, f_name);
 	}
 
-	char[] deser_slice = serializer.acquire_bin_data_from_file(f_name, mem);
+	char[] deser_slice = serializer.acquire_bin_data_from_file(mem, f_name);
 	defer allocator::free(mem, deser_slice.ptr);
 
 	St[] st_slice = util::from_byte_slice{St}(deser_slice);
@@ -186,7 +103,30 @@ fn void example_simple(Serializer* serializer, bool should_write)
 	}
 }
 
-fn void example_list(Serializer* serializer, bool should_write)
+fn void example_bin_math(Serializer* serializer, bool should_write)
+{
+	serializer.reset_state();
+	String f_name = ser::acquire_file_fmt_name("example.math", BIN);
+	int[3] init_params = { 1, 2, 3 };
+
+// Slice
+	MathStruct[3] vals;
+	if (should_write) {
+		foreach (uint i, &v : vals) {
+			v.init(init_params[i]);
+		}
+
+		serializer.serialize_to_bin_and_save_to_file(vals[..], tmem, f_name);
+	}
+
+	serializer.deserialize_from_bin(vals[..], tmem, f_name);
+
+	foreach (v : vals[..]) {
+		v.print();
+	}
+}
+
+fn void example_bin_list(Serializer* serializer, bool should_write)
 {
 	serializer.reset_state();
 	List{int} l_ints;
@@ -207,7 +147,7 @@ fn void example_list(Serializer* serializer, bool should_write)
 	io::printn(l_ints);
 }
 
-fn void example_dstring(Serializer* serializer, bool should_write)
+fn void example_bin_dstring(Serializer* serializer, bool should_write)
 {
 	serializer.reset_state();
 	DString dstring;
@@ -226,7 +166,7 @@ fn void example_dstring(Serializer* serializer, bool should_write)
 	io::printn(dstring);
 }
 
-fn void example_entity(Serializer* serializer, bool should_write)
+fn void example_bin_entity(Serializer* serializer, bool should_write)
 {
 	serializer.reset_state();
 	String f_name = ser::acquire_file_fmt_name("example.entity", BIN);
@@ -264,13 +204,36 @@ fn void example_text_simple(Serializer* serializer, bool should_write)
 		s_ces[1].init("world", 16, 32.0f, false, "iner2", TROLL);
 		s_ces[2].init("third", 32, 64.0f, false, "iner3", GOBLIN);
 
-		serializer.serialize_to_text_and_save_to_file(s_ces[..], tmem, false, f_name, $sizeof(St) * s_ces.len);
+		serializer.serialize_to_text_and_save_to_file(s_ces[..], tmem, f_name, false, $sizeof(St) * s_ces.len);
 	}
 
 	serializer.deserialize_from_text(s_ces[..], tmem, f_name);
 
 	foreach (s : s_ces[..]) {
 		s.print();
+	}
+}
+
+fn void example_text_math(Serializer* serializer, bool should_write)
+{
+	serializer.reset_state();
+	String f_name = ser::acquire_file_fmt_name("example.math", TEXT);
+	int[3] init_params = { 1, 2, 3 };
+
+// Slice
+	MathStruct[3] vals;
+	if (should_write) {
+		foreach (uint i, &v : vals) {
+			v.init(init_params[i]);
+		}
+
+		serializer.serialize_to_text_and_save_to_file(vals[..], tmem, f_name, false, $sizeof(St) * vals.len);
+	}
+
+	serializer.deserialize_from_text(vals[..], tmem, f_name);
+
+	foreach (v : vals[..]) {
+		v.print();
 	}
 }
 
@@ -288,7 +251,7 @@ fn void example_text_list(Serializer* serializer, bool should_write)
 		s_ces[1].init("world", 95, 1773.5f, false, "iner2", GOBLIN);
 		s_ces[2].init("third", 7785, 56.0631, true, "iner3", TROLL);
 		list.push_all(s_ces[..]);
-		serializer.serialize_to_text_and_save_to_file(&list, tmem, false, f_name, $sizeof(St) * 4);
+		serializer.serialize_to_text_and_save_to_file(&list, tmem, f_name, false, $sizeof(St) * 4);
 	}
 
 	serializer.deserialize_from_text(&list, tmem, f_name);
@@ -329,7 +292,7 @@ fn void example_text_hashmap(Serializer* serializer, bool should_write)
 		for (uint i = 0; i < keys.len; ++i) {
 			map.set(keys[i], values[i]);
 		}
-		serializer.serialize_to_text_and_save_to_file(&map, tmem, false, f_name, $sizeof(*map.table[0]) * keys.len);
+		serializer.serialize_to_text_and_save_to_file(&map, tmem, f_name, false, $sizeof(*map.table[0]) * keys.len);
 	}
 
 	serializer.deserialize_from_text(&map, tmem, f_name);
@@ -356,8 +319,8 @@ fn void example_text_entity(Serializer* serializer, bool should_write)
 		serializer.serialize_to_text_and_save_to_file(
 			&en,
 			tmem,
-			false,
 			f_name,
+			false,
 			Entity.sizeof
 			+ en.textures.byte_size()
 			+ en.job_name.len()
@@ -457,4 +420,103 @@ fn void Entity.deserialize_from_text(&entity, Parser* parser, Allocator alloc, S
 	entity.job_name.deserialize_from_text(parser, alloc, file_path);
 	parser.skip_until_next_value_start();
 	entity.map.deserialize_from_text(parser, alloc, file_path);
+}
+
+// Type definitions
+
+alias StackString = ElasticArray{char, 32};
+
+// Mark type to treat it as string, not array of bytes and format differently
+struct St (Printable) @tag(CustomFmtTag.STRUCT_STRING, 1)
+{
+	StackString name;
+	int         age;
+	float       money;
+	bool		is_married;
+	Inner		inner;
+}
+
+enum InnerType
+{
+	MONSTER,
+	TROLL,
+	GOBLIN
+}
+
+struct Inner (Printable) @tag(CustomFmtTag.STRUCT_STRING, 1)
+{
+	StackString name;
+	InnerType 	type;
+}
+
+fn void St.init(&new, char[5]* name, int age, float money, bool is_married = true, char[] inner_name = "inner1", InnerType inner_type = TROLL)
+{
+	mem::copy(&new.name.entries, name, name.len);
+	new.name.size = name.len;
+	new.age = age;
+	new.money = money;
+	new.is_married = is_married;
+	new.inner.init(inner_name, inner_type);
+}
+
+fn usz? St.to_format(&s, Formatter* f) @dynamic
+{
+	usz sz = f.printf("\n\tSt: %s %d %f %s ", (String)s.name.entries[..], s.age, s.money, s.is_married)!;
+	s.inner.print();
+	return sz;
+}
+
+fn void St.print(&s)
+{
+	io::printfn("St: %s %d %f %s", (String)s.name.entries[..], s.age, s.money, s.is_married);
+	s.inner.print();
+}
+
+fn void Inner.init(&inner, char[] name, InnerType type)
+{
+	mem::copy(&inner.name.entries, name.ptr, name.len);
+	inner.name.size = name.len;
+	inner.type = type;
+}
+
+fn void Inner.print(&inner)
+{
+	io::printf("\tInner: %s %s\n", (String)inner.name.array_view(), inner.type);
+}
+
+struct Entity @tag(CustomFmtTag.STRUCT_STRING, 1)
+{
+	StackString name;
+	int         age;
+	double      money;
+	List{int}   textures;
+	DString     job_name;
+	HashMap{int, float} map;
+}
+
+struct EntityStackPart
+{
+	StackString name;
+	int         age;
+	double      money;
+}
+
+struct MathStruct
+{
+	Matrix4x4{float} mat4;
+	float[<4>] vec4;
+}
+
+fn void MathStruct.init(&self, int i)
+{
+	self.mat4 = math::MATRIX4F_IDENTITY;
+	self.mat4.m11 = i;
+	self.vec4 = { 2, 2, 2, 8 };
+}
+
+fn void MathStruct.print(&self)
+{
+	io::printfn("MatStruct:");
+	io::printfn("%s", self.mat4.m);
+	io::printfn("%s\n", self.vec4);
 }

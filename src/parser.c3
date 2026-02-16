@@ -41,6 +41,11 @@ enum TokenChar : const inline char
 	STRUCT_START	= '{',
 	STRUCT_END  	= '}',
 	STRING_START	= '"',
+	STRING_END		= '"',
+	VEC_START		= '<',
+	VEC_END			= '>',
+	MAT_START		= '#',
+	MAT_END			= '#',
 	COMMENT			= ';',
 	COMMA			= ',',
 }
@@ -117,7 +122,8 @@ macro void Parser.parse_any(
 	$endif
 
 // NOTE: DEBUG
-	// io::printfn("curr char: %c, index: %d remain_distance: %d kind: %s, $unwrap_dist: %s, $arr_as_str: %s", parser.curr_char(), parser.curr, parser.end - parser.curr, $kind, $unwrap_distinct, $parse_next_array_as_string);
+	// io::printfn("Parser: curr char: %c, index: %d remain_distance: %d kind: %s, $unwrap_dist: %s, $arr_as_str: %s", parser.curr_char(), parser.curr, parser.end - parser.curr, $kind, $unwrap_distinct, $parse_next_array_as_string);
+	// parser.debug_view();
 
 	$switch ($kind):
 	$case DISTINCT:
@@ -138,7 +144,17 @@ macro void Parser.parse_any(
 		$if $Type.has_tagof(CustomFmtTag.STRUCT_STRING):
 			parser.parse_struct(out_val, true);
 		$else
-			parser.parse_struct(out_val, $parse_next_array_as_string);
+			$switch $Type:
+			$case Matrix2x2{float}:
+			$case Matrix3x3{float}:
+			$case Matrix4x4{float}:
+			$case Matrix2x2{double}:
+			$case Matrix3x3{double}:
+			$case Matrix4x4{double}:
+				parser.parse_mat(out_val);
+			$default:
+				parser.parse_struct(out_val, $parse_next_array_as_string);
+			$endswitch
 		$endif
 	$case ARRAY:
 		$if $parse_next_array_as_string:
@@ -147,11 +163,13 @@ macro void Parser.parse_any(
 			parser.parse_array(out_val[:out_val.len]);
 		$endif
 	$case SLICE:
-		$if $parse_next_array_as_string || $Type.has_tagof(CustomFmtTag.SLICE_STRING):
+		$if $parse_next_array_as_string:
 			parser.parse_string(out_val);
 		$else
 			parser.parse_array(out_val);
 		$endif
+	$case VECTOR:
+		parser.parse_vec(out_val);
 	$case SIGNED_INT:
 	$case UNSIGNED_INT:
 	$case FLOAT:
@@ -172,12 +190,12 @@ macro void Parser.parse_any(
 }
 
 <*
-	@require util::is_kindof($typeof(out_array), SLICE, POINTER) : "Should be a slice or pointer to array"
+	@require util::is_kindof($typeof(out_array), SLICE, POINTER, DISTINCT) : "Should be a slice or pointer to array"
 	@require parser.curr_char() == TokenChar.ARRAY_START : "Should be at the start of array"
 *>
 macro void Parser.parse_array(&parser, out_array)
 {
-	parser.next();
+	parser.step();
 	assert(!parser.is_at_end(), "Shouldn't be at the end here");
 	
 	foreach (&item : out_array) {
@@ -197,22 +215,37 @@ macro void Parser.parse_struct(
 	bool $parse_next_array_as_string = false,
 )
 {
-	parser.next();
+	parser.step();
 	assert(!parser.is_at_end(), "Shouldn't be at the end here");
 
 	var $RootType = $typeof(out_value);
 	var $Type = util::@get_pointee_type_val(out_value);
 
 	$foreach $mem : $Type.membersof:
-		var $MemType = $mem.typeid;
-		bool $has_str_tag = $mem.kindof == DISTINCT &&& util::is_kindof($MemType.inner, ARRAY) &&& $MemType.has_tagof(CustomFmtTag.SLICE_STRING);
-		$if $has_str_tag:
-			parser.parse_any(out_value.$eval($mem.nameof)[..], true, true);
-		$else
-			$if $mem.kindof == ARRAY:
-				parser.parse_any(out_value.$eval($mem.nameof)[..], true, $parse_next_array_as_string);
+		$if $mem.nameof.len:
+			var $MemType = $mem.typeid;
+			bool $is_distinct = $mem.kindof == DISTINCT;
+			bool $has_slice_str_tag = $MemType.has_tagof(CustomFmtTag.SLICE_STRING);
+			bool $has_struct_str_tag = $MemType.has_tagof(CustomFmtTag.STRUCT_STRING);
+			bool $has_any_str_tag = $has_slice_str_tag || $has_struct_str_tag;
+
+			$if $is_distinct:
+				parser.parse_any(out_value.$eval($mem.nameof)[..], true, $parse_next_array_as_string || $has_any_str_tag);
 			$else
-				parser.parse_any(&out_value.$eval($mem.nameof));
+				$if $mem.kindof == ARRAY:
+					$switch:
+					// NOTE: ElasticArray special case
+					$case $defined(out_value.array_view()):
+						parser.parse_any(out_value.array_view(), false, $parse_next_array_as_string);
+					// NOTE: DString special case
+					$case $defined(out_value.str_view()):
+						parser.parse_any(out_value.str_view(), false, true);
+					$default:
+						parser.parse_any(out_value.$eval($mem.nameof)[..], false, $parse_next_array_as_string);
+					$endswitch
+				$else
+					parser.parse_any(&out_value.$eval($mem.nameof), false, $parse_next_array_as_string || $has_struct_str_tag);
+				$endif
 			$endif
 		$endif
 	$endforeach
@@ -228,13 +261,57 @@ macro void Parser.parse_struct(
 macro void Parser.parse_string(&parser, out_str)
 {
 	// step after opening quote
-	parser.next();
-	char[] contents = parser.read_until_curr_char('\"');
+	parser.step();
+	char[] contents = parser.read_until_curr_char(TokenChar.STRING_END);
 	assert(contents.len > 0, "Should move at least 1 character");
 	assert((contents.len <= out_str.len), "Should not exceed out_str.len");
 	mem::copy(out_str, contents.ptr, contents.len);
+	assert(parser.curr_char() == TokenChar.STRING_END, "String should end with a quote");
+	assert(parser.remain_dist() >= 1);
 	// step after closing quote
-	parser.next();
+	parser.step();
+}
+
+<*
+	@require parser.curr_char() == TokenChar.ARRAY_START
+	@require parser.next_char() == TokenChar.VEC_START
+	@require parser.end - parser.curr > 2 : "Buffer shouldn't end that fast"
+*>
+macro void Parser.parse_vec(&parser, out_vec)
+{
+	parser.step_n(2);
+
+	foreach (&vec_el : out_vec) {
+		parser.parse_number(vec_el);
+		parser.skip_ws_or_comma();
+	}
+
+	assert(parser.remain_dist() >= 2, "Vector should end with <]");
+	assert(parser.curr_char() == TokenChar.VEC_END, "Vector should end with <]");
+	assert(parser.next_char() == TokenChar.ARRAY_END, "Vector should end with <]");
+	parser.step_n(2);
+}
+
+<*
+	@require parser.curr_char() == TokenChar.ARRAY_START : "Matrix should start with [#"
+	@require parser.next_char() == TokenChar.MAT_START : "Matrix should start with [#"
+	@require parser.end - parser.curr > 1 : "Buffer shouldn't end that fast"
+*>
+macro void Parser.parse_mat(&parser, out_mat)
+{
+	parser.step_n(2);
+	parser.skip_ws();
+
+	foreach (&mat_el : out_mat.m) {
+		parser.parse_number(mat_el);
+		parser.skip_ws_or_comma();
+	}
+
+	assert(parser.remain_dist() >= 2, "Matrix should end with 2 symbols");
+	assert(parser.curr_char() == TokenChar.MAT_END, "Matrix should end with #");
+	assert(parser.next_char() == TokenChar.ARRAY_END, "Matrix should end with ]");
+
+	parser.step_n(2);
 }
 
 <*
@@ -246,10 +323,9 @@ fn void Parser.parse_boolean(&parser, bool* out_bool)
 {
 	usz start = parser.curr;
 	char[] bool_value = parser.read_until_value_end();
-	assert(parser.curr > start, "Should move at least 1 character");
-	assert(parser.curr - start >= "true".len, "Should move at least 4 characters");
+	assert(bool_value.len > 0, "Should move at least 1 character");
+	assert(bool_value.len >= "true".len, "Should move at least 4 == \"true\".len characters");
 
-	// char[] bool_value = parser.buff_view[start .. parser.curr - 1];
 	if (mem::equals((char[])BoolAsString.TRUE, bool_value)) {
 		*out_bool = true;
 	}
@@ -362,7 +438,7 @@ fn char[] Parser.read_comment(&parser, CommentString* out_comment_value)
 		return {};
 	}
 
-	parser.next();
+	parser.step();
 	parser.skip_ws();
 	char[] value = parser.read_while_curr_char_cb(&ascii::is_alpha);
 	parser.skip_ws();
@@ -379,12 +455,12 @@ fn void Parser.parse_num_private(&parser, ElasticArray{char, MAX_DIGIT_LEN}* dig
 	{
 		char c = parser.curr_char();
 		if (c.is_digit()) {
-			parser.next();
+			parser.step();
 			was_dot = false;
 		} else if (c == '.') {
 			assert(!was_dot, "Shouldn't be two dots together");
 			was_dot = true;
-			parser.next();
+			parser.step();
 		} else {
 			assert(!was_dot, "Should be digit after dot");
 			break;
@@ -420,7 +496,7 @@ fn bool Parser.skip_ws(&parser) @private
 		if (c == '\n') {
 			parser.curr_line++;
 		}
-		parser.next();
+		parser.step();
 	}
 	return true;
 }
@@ -439,7 +515,7 @@ fn bool Parser.skip_ws_or_comma(&parser) @private
 		if (c == '\n') {
 			parser.curr_line++;
 		}
-		parser.next();
+		parser.step();
 	}
 	return true;
 }
@@ -478,7 +554,7 @@ fn char[] Parser.read_until_curr_char(&parser, char c) @private
 	usz start = parser.curr;
 	while (parser.curr < parser.end && parser.curr_char() != c)
 	{
-		parser.next();
+		parser.step();
 	}
 	return parser.buff_view[start : parser.curr - start];
 }
@@ -487,7 +563,7 @@ fn void Parser.skip_until_curr_char(&parser, char c) @private
 {
 	while (parser.curr < parser.end && parser.curr_char() != c)
 	{
-		parser.next();
+		parser.step();
 	}
 }
 
@@ -495,7 +571,7 @@ fn void Parser.skip_until_next_char(&parser, char c) @private
 {
 	while (parser.curr < parser.end && parser.next_char() != c)
 	{
-		parser.next();
+		parser.step();
 	}
 }
 
@@ -503,10 +579,10 @@ fn void Parser.skip_until_after_curr_char(&parser, char c) @private
 {
 	while (parser.curr < parser.end && parser.curr_char() != c)
 	{
-		parser.next();
+		parser.step();
 	}
 	if (parser.curr < parser.end) {
-		parser.next();
+		parser.step();
 	}
 }
 
@@ -514,7 +590,7 @@ fn void Parser.skip_until_curr_char_cb(&parser, SkipCallback cb) @private
 {
 	while (parser.curr < parser.end && !cb(parser.curr_char()))
 	{
-		parser.next();
+		parser.step();
 	}
 }
 
@@ -523,7 +599,7 @@ fn char[] Parser.read_until_curr_char_cb(&parser, SkipCallback cb) @private
 	usz start = parser.curr;
 	while (parser.curr < parser.end && !cb(parser.curr_char()))
 	{
-		parser.next();
+		parser.step();
 	}
 	return parser.buff_view[start : parser.curr - start];
 }
@@ -533,7 +609,7 @@ fn char[] Parser.read_while_curr_char_cb(&parser, SkipCallback cb) @private
 	usz start = parser.curr;
 	while (parser.curr < parser.end && cb(parser.curr_char()))
 	{
-		parser.next();
+		parser.step();
 	}
 	return parser.buff_view[start : parser.curr - start];
 }
@@ -549,9 +625,9 @@ fn char Parser.curr_char(&parser) @private @inline
 	return parser.buff_view[parser.curr];
 }
 
-fn char Parser.next_char(&parser) @private @inline
+fn char Parser.next_char(&parser, uint offset = 0) @private @inline
 {
-	return parser.buff_view[parser.curr + 1];
+	return parser.buff_view[parser.curr + 1 + offset];
 }
 
 fn char Parser.curr_char_and_next(&parser) @private @inline
@@ -559,9 +635,22 @@ fn char Parser.curr_char_and_next(&parser) @private @inline
 	return parser.buff_view[parser.curr++];
 }
 
-fn void Parser.next(&parser) @private @inline
+fn void Parser.step(&parser) @private @inline
 {
 	parser.curr++;
+}
+
+<*
+	@require count <= (parser.end - parser.curr) : "Shouldn't exceed bounds"
+*>
+fn void Parser.step_n(&parser, uint count) @private @inline
+{
+	parser.curr += count;
+}
+
+fn usz Parser.remain_dist(&parser) @private @inline
+{
+	return parser.end - parser.curr;
 }
 
 fn bool Parser.is_at_end(&parser) @private @inline

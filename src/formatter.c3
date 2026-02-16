@@ -1,6 +1,7 @@
 module ser;
 
 import std::io;
+import std::math::matrix;
 import util;
 
 enum CustomFmtTag : const inline String
@@ -36,7 +37,7 @@ macro void Formatter.format_any(
 	$endif
 
 // NOTE: DEBUG
-	// io::printfn("value: %s kind: %s, $unwrap_dist: %s, $arr_as_str: %s", val, $kind, $unwrap_distinct, $parse_next_array_as_string);
+	// io::printfn("Formatter: value: %s kind: %s, $unwrap_dist: %s, $arr_as_str: %s", val, $kind, $unwrap_distinct, $parse_next_array_as_string);
 
  	$switch $kind:
 	$case DISTINCT:
@@ -53,7 +54,17 @@ macro void Formatter.format_any(
 		$if $Type.has_tagof(CustomFmtTag.STRUCT_STRING):
 			f.format_struct(val, $indent_count, $top_level, true);
 		$else
-			f.format_struct(val, $indent_count, $top_level, $parse_next_array_as_string);
+			$switch $Type:
+			$case Matrix2x2{float}:
+			$case Matrix3x3{float}:
+			$case Matrix4x4{float}:
+			$case Matrix2x2{double}:
+			$case Matrix3x3{double}:
+			$case Matrix4x4{double}:
+				f.format_mat(val, $indent_count, $top_level);
+			$default:
+				f.format_struct(val, $indent_count, $top_level, $parse_next_array_as_string);
+			$endswitch
 		$endif
 	$case ARRAY:
 	$case SLICE:
@@ -62,6 +73,8 @@ macro void Formatter.format_any(
 		$else
 			f.format_array(val, $indent_count, $top_level);
 		$endif
+	$case VECTOR:
+		f.format_vec(val, $indent_count, $top_level);
 	$case BOOL:
 	$case SIGNED_INT:
 	$case UNSIGNED_INT:
@@ -111,7 +124,7 @@ macro void Formatter.format_primitive(
 }
 
 <*
-	Introspect a struct and print it to a formatter
+	Introspect struct and print it to a formatter
 	@require util::@is_kindof_val(val, STRUCT, BITSTRUCT, DISTINCT, POINTER)
 		: "TypeKind should be one of: STRUCT, BITSTRUCT, DISTINCT, POINTER"
 *>
@@ -139,7 +152,17 @@ macro void Formatter.format_struct(
         $endif
         $if $member.nameof != "":
             f.printf($inner_indent_s +++ "; %s\n", $member.nameof)!!;
-			f.format_any(val.$eval($member.nameof), $indent_count + 1, false, false, $parse_next_array_as_string);
+			var $MemType = $member.typeid;
+			$switch:
+			// NOTE: ElasticArray special case
+			$case $MemType.kindof == ARRAY &&& $defined(val.array_view()):
+				f.format_any(val.array_view(), $indent_count + 1, false, false, $parse_next_array_as_string);
+			// NOTE: DString special case
+			$case $MemType.kindof == ARRAY &&& $defined(val.str_view()):
+				f.format_any(val.str_view(), $indent_count + 1, false, false, $parse_next_array_as_string);
+			$default:
+				f.format_any(val.$eval($member.nameof), $indent_count + 1, false, false, $parse_next_array_as_string);
+			$endswitch
 		$endif
 	$endforeach
 
@@ -151,7 +174,7 @@ macro void Formatter.format_struct(
 }
 
 <*
-	Introspect an array and print it to a formatter
+	Introspect array and print it to a formatter
 	@require util::@is_kindof_val(val, ARRAY, SLICE, DISTINCT, POINTER)
 		: "TypeKind should be one of: ARRAY, SLICE, DISTINCT"
 *>
@@ -185,7 +208,7 @@ macro void Formatter.format_array(
 }
 
 <*
-	Introspect an string and print it to a formatter
+	Introspect string and print it to a formatter
 	@require util::is_kindof($typeof(val), ARRAY, SLICE, DISTINCT)
 		: "TypeKind should be one of: ARRAY, SLICE, DISTINCT"
 	@require util::@get_innermost_type_val(val) == char : "Should be char as underlying type"
@@ -207,6 +230,94 @@ macro void Formatter.format_string(
 
 	f.printf("%s\"", (String)val[..])!!;
 
+	$if $top_level:
+		f.print("\n")!!;
+	$endif
+}
+
+<*
+	Introspect vector and print it to a formatter
+	@require util::is_kindof($typeof(val), VECTOR)
+		: "TypeKind should be one of: ARRAY, SLICE, DISTINCT"
+*>
+macro void Formatter.format_vec(
+	&f,
+	val,
+	char $indent_count = 0,
+	bool $top_level = true,
+) @private
+{
+	String $indent_str = @get_indent($indent_count);
+
+	$if $top_level:
+	    f.print("\n" +++ $indent_str)!!;
+	$else
+	    f.print($indent_str)!!;
+	$endif
+
+	f.printf("%s", val)!!;
+
+	$if $top_level:
+		f.print("\n")!!;
+	$endif
+}
+
+<*
+	Introspect matrix and print it to a formatter
+	@require util::is_kindof($typeof(mat), STRUCT) : "TypeKind should be STRUCT"
+*>
+macro void Formatter.format_mat(
+	&f,
+	mat,
+	char $indent_count = 0,
+	bool $top_level = true,
+) @private
+{
+	String $base_indent_s = @get_indent($indent_count);
+	String $inner_indent_s = $base_indent_s +++ INDENT_SYMBOL;
+	String $mat_start = "[#";
+	String $mat_end = "#]";
+
+	$if $top_level:
+	    f.print("\n" +++ $base_indent_s +++ $mat_start +++ "\n")!!;
+	$else
+	    f.print($base_indent_s +++ $mat_start +++ "\n")!!;
+	$endif
+
+	uint $cols = 2;
+
+	$switch (mat.m.len):
+	$case 4:
+		$cols = 2;
+	$case 9:
+		$cols = 3;
+	$case 16:
+		$cols = 4;
+	$default:
+		unreachable("Unsupported number of elements for matrix: %d", mat.m.len);
+	$endswitch
+
+	uint $rows = $cols;
+
+	$for uint $x = 0; $x < $rows; ++$x:
+		$for uint $y = 0; $y < $cols; ++$y:
+			$if $y == 0:
+				f.print($inner_indent_s)!!;
+			$endif
+
+			f.printf("%s", mat.m[$x * $cols + $y])!!;
+			$if $x * $cols + $y < mat.m.len - 1:
+				f.printf(", ")!!;
+			$endif
+		$endfor
+
+		$if $x < $rows - 1:
+			f.print("\n")!!;
+		$else
+			f.print("\n" +++ $base_indent_s +++ $mat_end)!!;
+		$endif
+	$endfor
+	
 	$if $top_level:
 		f.print("\n")!!;
 	$endif

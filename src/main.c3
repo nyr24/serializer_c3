@@ -90,13 +90,13 @@ fn void example_bin_simple(Serializer* serializer, bool should_write)
 		s_ces[1].init("sim_2", 16, 32.0f, false, "iner2", TROLL);
 		s_ces[2].init("sim_3", 32, 64.0f, false, "iner3", MONSTER);
 
-		serializer.serialize_to_bin_and_save_to_file(util::to_byte_slice{St}(s_ces[..]), mem, f_name);
+		serializer.serialize_to_bin_and_save_to_file(util::to_byte_slice(s_ces[..]), mem, f_name);
 	}
 
 	char[] deser_slice = serializer.acquire_bin_data_from_file(mem, f_name);
 	defer allocator::free(mem, deser_slice.ptr);
 
-	St[] st_slice = util::from_byte_slice{St}(deser_slice);
+	St[] st_slice = util::from_byte_slice(deser_slice, St[]);
 
 	foreach (s : st_slice) {
 		s.print();
@@ -376,7 +376,7 @@ fn void Entity.serialize_to_bin(&entity, Serializer* ser, Allocator alloc)
 	stack_p.name = entity.name;
 	stack_p.age = entity.age;
 	stack_p.money = entity.money;
-	char[] stack_p_slice = util::ptr_to_byte_slice{EntityStackPart}(&stack_p);
+	char[] stack_p_slice = util::to_byte_slice(&stack_p);
 	
 	ser.append_bin_data_to_buff(stack_p_slice, alloc, false);
 	ser.serialize_to_bin(&entity.textures, alloc);

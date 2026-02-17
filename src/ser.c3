@@ -95,11 +95,7 @@ macro void Serializer.serialize_to_bin(
 	$if implements_serializable_to_bin(util::@get_pointee_type_val(val)):
 		val.serialize_to_bin(ser, alloc);
 	$else
-		var $Type = $typeof(val);
-		$if util::is_kindof($Type, SLICE, ARRAY, POINTER):
-			$Type = $Type.inner;
-		$endif
-		ser.append_bin_data_to_buff(util::to_byte_slice{$Type}(val), alloc, should_free_memory);
+		ser.append_bin_data_to_buff(util::to_byte_slice(val), alloc, should_free_memory);
 	$endif
 }
 
@@ -368,7 +364,7 @@ fn void Serializer.write_file_header_to_buff(&ser, usz contents_len, Serializati
 	header.format_id = mode == BIN ? FILE_FORMAT_ID_BIN : FILE_FORMAT_ID_TXT;
 	header.contents_len = (uint)contents_len;
 	header.mode = (uint)mode;
-	char[] header_as_bytes = util::ptr_to_byte_slice{FileHeader}(&header);
+	char[] header_as_bytes = util::to_byte_slice(&header);
 	ser.buff.push_all(header_as_bytes);
 }
 
@@ -382,7 +378,7 @@ fn usz Serializer.write_chunk_header(&ser, usz chunk_size) @private
 	uint chunk_with_header_common_aligned_size = (uint)mem::aligned_offset(chunk_size + ChunkHeader.sizeof, ALIGNMENT);
 	header.aligned_size = chunk_with_header_common_aligned_size - ChunkHeader.sizeof;
 	header.padding = header.aligned_size - (uint)chunk_size;
-	char[] header_as_bytes = util::ptr_to_byte_slice{ChunkHeader}(&header);
+	char[] header_as_bytes = util::to_byte_slice(&header);
 
 	ser.buff.push_all(header_as_bytes);
 

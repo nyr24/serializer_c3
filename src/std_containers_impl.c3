@@ -215,10 +215,10 @@ fn void HashMap.serialize_to_bin(&map, Serializer* ser, Allocator alloc)
 	ser_map.count = map.count;
 	ser_map.threshold = map.threshold;
 	ser_map.load_factor = map.load_factor;
-	ser.append_bin_data_to_buff(util::ptr_to_byte_slice{HashMapSerializedBin}(&ser_map), alloc, false);
+	ser.append_bin_data_to_buff(util::to_byte_slice(&ser_map), alloc, false);
 	if (ser_map.count > 0) {
-		ser.append_bin_data_to_buff(util::to_byte_slice{Key}(keys), alloc, true);
-		ser.append_bin_data_to_buff(util::to_byte_slice{Value}(values), alloc, true);
+		ser.append_bin_data_to_buff(util::to_byte_slice(keys), alloc, true);
+		ser.append_bin_data_to_buff(util::to_byte_slice(values), alloc, true);
 	}
 }
 
@@ -231,8 +231,8 @@ fn void HashMap.deserialize_from_bin(&map, ChunkIterator* chunk_it, Allocator al
 	map.allocator = alloc;
 	map.table = allocator::new_array(alloc, void*, (usz)(ser_map.threshold / ser_map.load_factor));
 
-	Key[] keys = util::from_byte_slice{Key}(chunk_it.next());
-	Value[] values = util::from_byte_slice{Value}(chunk_it.next());
+	Key[] keys = util::from_byte_slice(chunk_it.next(), Key[]);
+	Value[] values = util::from_byte_slice(chunk_it.next(), Value[]);
 	assert(keys.len == values.len, "Should be equal");
 
 	for (uint i; i < keys.len; ++i) {

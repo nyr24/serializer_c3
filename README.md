@@ -1,4 +1,4 @@
-## Binary data serializer implemented in C3 programming language
+## Data serializer (binary & text) implemented in C3 programming language
 
 ## Notes
 - Supported std::collections for know (List, DString, HashMap)

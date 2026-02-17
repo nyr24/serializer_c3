@@ -1,115 +1,123 @@
 ## Binary data serializer implemented in C3 programming language
 
+## Notes
+- Supported std::collections for know (List, DString, HashMap)
+- Serialization of data without pointers should work out of the box 
+-	To serialize data with pointers (heap-allocated data, interfaces, etc.) inside you should implement interface yourself (watch implementations for std::collections in std_containers_impl.c3)
+
 ## Download
 - ssh
-	`git clone git@github.com:nyr24/serializer_c3.git`
+	`git clone --recurse-submodules git@github.com:nyr24/serializer_c3.git`
 - http
-	`git clone https://github.com/nyr24/serializer_c3.git`
+	`git clone --recurse-submodules https://github.com/nyr24/serializer_c3.git`
+
+## Build
+-	static-lib
+	`c3c build`
+-	executable (for tests/examples)
+	`c3c build ser_test && c3c run ser_test -- 1` // serialize output to the files + read from them
+	`c3c run ser_test` // just reads content from the files (Note: you should execute previous command first for this to work properly)
 
 ## Examples
 ```cpp
 
-// Simple stack array
-struct St
+alias StackString = ElasticArray{char, 32};
+
+// Mark type to treat it as string, not array of bytes and format differently
+struct St @tag(CustomFmtTag.STRUCT_STRING, 1)
 {
 	StackString name;
 	int         age;
 	float       money;
+	bool				is_married;
+	Inner				inner;
 }
 
-fn void example_simple(Serializer* serializer, bool should_write)
+enum InnerType
 {
-	String f_name = ser::acquire_file_fmt_name("test.simple", BIN);
+	MONSTER,
+	TROLL,
+	GOBLIN
+}
+
+struct Inner @tag(CustomFmtTag.STRUCT_STRING, 1)
+{
+	StackString name;
+	InnerType 	type;
+}
+
+// Binary serialization
+
+fn void example_bin_simple(Serializer* serializer, bool should_write)
+{
+	String f_name = ser::acquire_file_fmt_name("example.simple", BIN);
 
 	if (should_write) {
 		St[3] s_ces;
-		s_ces[0].init("hello", 13, 228.5f);
-		s_ces[1].init("world", 95, 1773.5f);
-		s_ces[2].init("third", 7785, 56.0631);
+		s_ces[0].init("sim_1", 8, 16.0f, true, "iner1", GOBLIN);
+		s_ces[1].init("sim_2", 16, 32.0f, false, "iner2", TROLL);
+		s_ces[2].init("sim_3", 32, 64.0f, false, "iner3", MONSTER);
 
-		serializer.push_serialized_data_and_save_to_file(util::to_byte_slice{St}(s_ces[..]), tmem, BIN, f_name);
+		serializer.serialize_to_bin_and_save_to_file(util::to_byte_slice(s_ces[..]), mem, f_name);
 	}
 
-	char[] deser_slice = serializer.deserialize_raw_data_from_bin(f_name);
-	St[] st_slice = util::from_byte_slice{St}(deser_slice);
+	char[] deser_slice = serializer.acquire_bin_data_from_file(mem, f_name);
+	defer allocator::free(mem, deser_slice.ptr);
+
+	St[] st_slice = util::from_byte_slice(deser_slice, St[]);
 
 	foreach (s : st_slice) {
 		s.print();
 	}
 }
 
-// Heap-allocated object (std::core::dstring)
-fn void example_dstring(Serializer* serializer, bool should_write)
+// Text serialization
+
+fn void example_text_simple(Serializer* serializer, bool should_write)
 {
-	DString dstring;
-	dstring.tinit(100);
-	defer dstring.free();
+	serializer.reset_state();
+	String f_name = ser::acquire_file_fmt_name("example.simple", TEXT);
 
-	dstring.append_string("hello_world");
-
-	String f_name = ser::acquire_file_fmt_name("test.dstring", BIN);
+	St[3] s_ces;
 	if (should_write) {
-		serializer.serialize((Serializable)&dstring, tmem, BIN);
-		serializer.save_serialized_data_to_file(f_name, BIN);
+		s_ces[0].init("hello", 8, 16.0f, true, "iner1", MONSTER);
+		s_ces[1].init("world", 16, 32.0f, false, "iner2", TROLL);
+		s_ces[2].init("third", 32, 64.0f, false, "iner3", GOBLIN);
+
+		serializer.serialize_to_text_and_save_to_file(s_ces[..], tmem, f_name, false, $sizeof(St) * s_ces.len);
 	}
 
-	serializer.deserialize((Serializable)&dstring, tmem, BIN, f_name);
-	io::printn(dstring);
-}
+	serializer.deserialize_from_text(s_ces[..], tmem, f_name);
 
-
-// Complex Entity object:
-
-struct Entity (Serializable)
-{
-	StackString name;
-	int         age;
-	double      money;
-	List{int}   textures;
-	DString     job_name;
-}
-
-// Serializable interface implementation for Entity struct
-// chunked serialization - 1. stack part; 2. dynamic list; 3. dynamic string;
-
-fn void Entity.serialize_to_bin(&entity, Serializer* ser, Allocator alloc, SerializationMode mode) @dynamic
-{
-	EntityStackPart stack_p;
-	stack_p.name = entity.name;
-	stack_p.age = entity.age;
-	stack_p.money = entity.money;
-	char[] stack_p_slice = util::ptr_to_byte_slice{EntityStackPart}(&stack_p);
-	
-	ser.push_serialized_data(stack_p_slice, alloc, mode);
-	ser.serialize((Serializable)&entity.textures, alloc, mode);
-	ser.serialize((Serializable)&entity.job_name, alloc, mode);
-}
-
-fn void Entity.deserialize_from_chunks_bin(&entity, ChunkIterator chunk_it, Allocator alloc) @dynamic
-{
-	char[] first_chunk = chunk_it.next();
-	char[] textures_data = chunk_it.next();
-	char[] job_name_data = chunk_it.next();
-	mem::copy((char*)entity, first_chunk.ptr, first_chunk.len);
-	entity.textures.deserialize_from_data_bin(textures_data, alloc);
-	entity.job_name.deserialize_from_data_bin(job_name_data, alloc);
-}
-
-// Usage
-fn void example_entity(Serializer* serializer, bool should_write)
-{
-	String f_name = ser::acquire_file_fmt_name("test.entity", BIN);
-	Entity en;
-
-	if (should_write) {
-		int[*] textures = {1,2,3,4,5};
-		en.init("Vasya", 13, 666.77, textures[..], "Gamburger Builder", tmem);
-
-		serializer.serialize_and_save_to_file((Serializable)&en, tmem, BIN, f_name);
+	foreach (s : s_ces[..]) {
+		s.print();
 	}
-
-	serializer.deserialize((Serializable)&en, tmem, BIN, f_name);
-	en.print();
 }
+
+/* File format for Text serialization example:
+{ (struct)
+	; field_1 (int)
+	123,
+	; field_2 (string)
+	"hello",
+	; field_3 (float)
+	228.0,
+	; field_4 (array)
+	[
+		{
+			123,
+			"hello",
+			228.0,
+		}
+	]
+	; field_5 (vector)
+	[<1, 2, 3>]
+	; field_6 (matrix)
+	[#
+		1, 1
+		2, 3
+	#]
+}
+*/
 
 ````

@@ -159,7 +159,7 @@ macro void Serializer.deserialize_from_bin(
 	$if implements_serializable_to_bin(util::@get_pointee_type_val(val)):
 		if (!ser.chunk_it.is_initialized()) {
 			usz contents_len = ser.read_file_into_buffer(BIN, file_path);
-			ser.chunk_it.init(ser, contents_len);
+			ser.chunk_it.init(&ser.buff, contents_len);
 		}
 		val.deserialize_from_bin(&ser.chunk_it, alloc);
 	$else
@@ -168,7 +168,10 @@ macro void Serializer.deserialize_from_bin(
 }
 
 <*
-	Caller must free the data
+	Acquire all data that was written, should only be used if you write to the file in 1 pass / call to 'serialize_to_bin' or 'append_bin_data_to_buff'
+	If you do multiple writes, you should call 'acquire_bin_data_from_file_as_chunks' to retrieve all your writes in sequential order
+
+	Caller must free the memory
 *>
 fn char[] Serializer.acquire_bin_data_from_file(&ser, Allocator alloc, String file_path)
 {
@@ -178,6 +181,13 @@ fn char[] Serializer.acquire_bin_data_from_file(&ser, Allocator alloc, String fi
 	mem::copy(data.ptr, buff_view.ptr, buff_view.len);
 	ser.reset_state();
 	return data;
+}
+
+fn ChunkIterator* Serializer.acquire_bin_data_from_file_as_chunks(&ser, Allocator alloc, String file_path)
+{
+	usz contents_len = ser.read_file_into_buffer(BIN, file_path);
+	ser.chunk_it.init(&ser.buff, contents_len);
+	return &ser.chunk_it;
 }
 
 fn void Serializer.write_serialized_chunk_to_buff(&ser, char[] serialized_chunk) @private
@@ -191,9 +201,9 @@ fn void Serializer.write_serialized_chunk_to_buff(&ser, char[] serialized_chunk)
 
 // ChunkIterator
 
-fn void ChunkIterator.init(&chunk_it, Serializer* ser, usz contents_len)
+fn void ChunkIterator.init(&chunk_it, List{char}* buff, usz contents_len)
 {
-	chunk_it.buff_view = ser.buff.view_range_len(0, FileHeader.sizeof + contents_len);
+	chunk_it.buff_view = buff.view_range_len(0, FileHeader.sizeof + contents_len);
 	chunk_it.offset = FileHeader.sizeof;
 }
 
@@ -207,10 +217,11 @@ fn bool ChunkIterator.is_initialized(&chunk_it)
 	return chunk_it.buff_view.ptr && chunk_it.buff_view.len > 0;
 }
 
+<*
+	@require chunk_it.offset < chunk_it.buff_view.len : "Where is no chunks anymore in buffer, something went wrong"
+*>
 fn char[] ChunkIterator.next(&chunk_it)
 {
-	assert(chunk_it.offset < chunk_it.buff_view.len, "Where is no chunks anymore in buffer, something went wrong");
-
 	ChunkHeader header;
 	chunk_it.read_chunk_header_and_move_offset(&header);
 	uint chunk_size = header.aligned_size - header.padding;
@@ -279,7 +290,7 @@ macro void Serializer.append_text_data_to_buff(
 	if (ser.buff.size == 0) {
 		ser.write_file_header_to_buff(0, TEXT);
 	}
-	ser.formatter.format_any(data, 0, true);
+	ser.formatter.format_to_text(data);
 	ser.update_file_contents_len_with_curr_offset();
 
 	if (should_free_memory) {
@@ -318,10 +329,6 @@ macro void Serializer.deserialize_from_text(
 
 // Utils
 
-<*
-	Should be called explicitly before calling 'deserialize_from_text'
-	or call 'read_file_and_deserialize_from_text' as another option
-*>
 fn usz Serializer.read_file_into_buffer(&ser, SerializationMode mode, String file_path)
 {
 	File file = file::open_read(file_path, mode);
@@ -425,6 +432,9 @@ macro String acquire_file_fmt_name(String $base_name, SerializationMode mode)
 	}
 }
 
+<*
+	This is important to call to finish a batch of serialization calls and reset all of the state
+*>
 fn void Serializer.reset_state(&ser)
 {
 	ser.buff.clear();

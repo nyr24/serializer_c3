@@ -2,14 +2,12 @@ module ser;
 
 import util;
 import std::io;
-import std::math::random;
+import std::math;
 import std::collections::elastic_array;
 import std::collections::list;
 import std::collections::map;
-import std::hash::fnv64a;
-import std::math;
 
-fn int main(String[] args)
+fn void main_test() @test
 {
 	Serializer serializer;
 	serializer.init(mem);
@@ -26,54 +24,57 @@ fn int main(String[] args)
 	const EXAMPLE_TEXT_DSTRING = true;
 	const EXAMPLE_TEXT_HASHMAP = true;
 	const EXAMPLE_TEXT_ENTITY = true;
+	const EXAMPLE_MULTIPLE = true;
 
-	bool should_write = args.len > 1;
+	const SHOULD_WRITE = true;
 
 	if (EXAMPLE_BIN_SIMPLE) {
-		example_bin_simple(&serializer, should_write);
+		example_bin_simple(&serializer, SHOULD_WRITE);
 	}
 
 	if (EXAMPLE_BIN_MATH) {
-		example_bin_math(&serializer, should_write);
+		example_bin_math(&serializer, SHOULD_WRITE);
 	}
 
 	if (EXAMPLE_BIN_LIST) {
-		example_bin_list(&serializer, should_write);
+		example_bin_list(&serializer, SHOULD_WRITE);
 	}
 
 	if (EXAMPLE_BIN_DSTRING) {
-		example_bin_dstring(&serializer, should_write);
+		example_bin_dstring(&serializer, SHOULD_WRITE);
 	}
 
 	if (EXAMPLE_BIN_ENTITY) {
-		example_bin_entity(&serializer, should_write);
+		example_bin_entity(&serializer, SHOULD_WRITE);
 	}
 
 	if (EXAMPLE_TEXT_SIMPLE) {
-		example_text_simple(&serializer, should_write);
+		example_text_simple(&serializer, SHOULD_WRITE);
 	}
 
 	if (EXAMPLE_TEXT_MATH) {
-		example_text_math(&serializer, should_write);
+		example_text_math(&serializer, SHOULD_WRITE);
 	}
 
 	if (EXAMPLE_TEXT_LIST) {
-		example_text_list(&serializer, should_write);
+		example_text_list(&serializer, SHOULD_WRITE);
 	}
 
 	if (EXAMPLE_TEXT_DSTRING) {
-		example_text_dstring(&serializer, should_write);
+		example_text_dstring(&serializer, SHOULD_WRITE);
 	}
 
 	if (EXAMPLE_TEXT_HASHMAP) {
-		example_text_hashmap(&serializer, should_write);
+		example_text_hashmap(&serializer, SHOULD_WRITE);
 	}
 
 	if (EXAMPLE_TEXT_ENTITY) {
-		example_text_entity(&serializer, should_write);
+		example_text_entity(&serializer, SHOULD_WRITE);
 	}
 
-	return 0;
+	if (EXAMPLE_MULTIPLE) {
+		example_multiple_writes_and_reads(&serializer, SHOULD_WRITE);
+	}
 }
 
 // EXAMPLES
@@ -299,6 +300,66 @@ fn void example_text_hashmap(Serializer* serializer, bool should_write)
 	io::printn(map);
 }
 
+// it would be easier / performant to write this slices of data in 1 pass
+// as it is done in previous examples
+// but this is just a test of api robustness
+fn void example_multiple_writes_and_reads(Serializer* serializer, bool should_write)
+{
+	serializer.reset_state();
+
+	String f_name_bin = ser::acquire_file_fmt_name("example.multiple", BIN);
+	String f_name_txt = ser::acquire_file_fmt_name("example.multiple", TEXT);
+
+	if (should_write) {
+		St[3] s_ces;
+		s_ces[0].init("sim_1", 8, 16.0f, true, "iner1", GOBLIN);
+		serializer.serialize_to_bin(&s_ces[0], mem);
+
+		s_ces[1].init("sim_2", 16, 32.0f, false, "iner2", TROLL);
+		serializer.serialize_to_bin(&s_ces[1], mem);
+
+		s_ces[2].init("sim_3", 32, 64.0f, false, "iner3", MONSTER);
+		serializer.serialize_to_bin(&s_ces[2], mem);
+
+		serializer.save_serialized_data_to_file(f_name_bin, BIN);
+
+		serializer.reset_state();
+
+		St[3] s_ces_txt;
+		s_ces_txt[0].init("sim_1", 8, 16.0f, true, "iner1", GOBLIN);
+		serializer.serialize_to_text(&s_ces_txt[0], mem);
+
+		s_ces_txt[1].init("sim_2", 16, 32.0f, false, "iner2", TROLL);
+		serializer.serialize_to_text(&s_ces_txt[1], mem);
+
+		s_ces_txt[2].init("sim_3", 32, 64.0f, false, "iner3", MONSTER);
+		serializer.serialize_to_text(&s_ces_txt[2], mem);
+
+		serializer.save_serialized_data_to_file(f_name_txt, TEXT);
+	}
+
+	ChunkIterator* chunk_it = serializer.acquire_bin_data_from_file_as_chunks(mem, f_name_bin);
+	St[3] st_bin_slice;
+	foreach (&st : st_bin_slice) {
+		char[] bytes = chunk_it.next();
+		mem::copy(st, bytes.ptr, bytes.len);
+	}
+
+	foreach (s : st_bin_slice) {
+		s.print();
+	}
+
+	St[3] st_slice_text;
+
+	foreach (&s : st_slice_text) {
+		serializer.deserialize_from_text(s, mem, f_name_txt);
+	}
+
+	foreach (s : st_slice_text) {
+		s.print();
+	}
+}
+
 fn void example_text_entity(Serializer* serializer, bool should_write)
 {
 	serializer.reset_state();
@@ -427,7 +488,7 @@ fn void Entity.deserialize_from_text(&entity, Parser* parser, Allocator alloc, S
 alias StackString = ElasticArray{char, 32};
 
 // Mark type to treat it as string, not array of bytes and format differently
-struct St (Printable) @tag(CustomFmtTag.STRUCT_STRING, 1)
+struct St (Printable) @tag(CUSTOM_FMT_TAG_STRUCT_STRING, 1)
 {
 	StackString name;
 	int         age;
@@ -443,7 +504,7 @@ enum InnerType
 	GOBLIN
 }
 
-struct Inner (Printable) @tag(CustomFmtTag.STRUCT_STRING, 1)
+struct Inner (Printable) @tag(CUSTOM_FMT_TAG_STRUCT_STRING, 1)
 {
 	StackString name;
 	InnerType 	type;
@@ -461,14 +522,14 @@ fn void St.init(&new, char[5]* name, int age, float money, bool is_married = tru
 
 fn usz? St.to_format(&s, Formatter* f) @dynamic
 {
-	usz sz = f.printf("\n\tSt: %s %d %f %s ", (String)s.name.entries[..], s.age, s.money, s.is_married)!;
+	usz sz = f.printf("\n\tSt: %s %d %f %s ", (String)s.name.array_view(), s.age, s.money, s.is_married)!;
 	s.inner.print();
 	return sz;
 }
 
 fn void St.print(&s)
 {
-	io::printfn("St: %s %d %f %s", (String)s.name.entries[..], s.age, s.money, s.is_married);
+	io::printfn("St: %s %d %f %s", (String)s.name.array_view(), s.age, s.money, s.is_married);
 	s.inner.print();
 }
 
@@ -484,7 +545,7 @@ fn void Inner.print(&inner)
 	io::printf("\tInner: %s %s\n", (String)inner.name.array_view(), inner.type);
 }
 
-struct Entity @tag(CustomFmtTag.STRUCT_STRING, 1)
+struct Entity @tag(CUSTOM_FMT_TAG_STRUCT_STRING, 1)
 {
 	StackString name;
 	int         age;

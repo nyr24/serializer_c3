@@ -104,7 +104,7 @@ fn void DStringSerializedBin.free(&ser_repr, Allocator alloc)
 	allocator::free(alloc, &ser_repr);
 }
 
-struct DStringSerializedText @tag(CustomFmtTag.STRUCT_STRING, 1)
+struct DStringSerializedText @tag(ser::CUSTOM_FMT_TAG_STRUCT_STRING, 1)
 {
 	usz     len;
 	usz     capacity;

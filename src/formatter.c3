@@ -4,15 +4,22 @@ import std::io;
 import std::math::matrix;
 import util;
 
-enum CustomFmtTag : const inline String
-{
 // for char slices/arrays that user wants to format as strings
-	SLICE_STRING 	= "FMT_SLICE_STRING",
+const CUSTOM_FMT_TAG_SLICE_STRING 	= "FMT_SLICE_STRING";
 // for structs which have char arrays inside (ElasticArray{char, 20})
-	STRUCT_STRING 	= "FMT_STRUCT_STRING",
-}
+const CUSTOM_FMT_TAG_STRUCT_STRING 	= "FMT_STRUCT_STRING";
 
 const INDENT_SYMBOL = '\t';
+
+<*
+	Infers type from the passed value
+	Provides high level wrapper for 'format_any'
+	Should be used as entry-point
+*>
+macro void Formatter.format_to_text(&f, val)
+{
+	return f.format_any(val, 0, true, false, false);
+}
 
 macro void Formatter.format_any(
 	&f,
@@ -42,16 +49,16 @@ macro void Formatter.format_any(
  	$switch $kind:
 	$case DISTINCT:
 		$switch:
-		$case $Type.has_tagof(CustomFmtTag.SLICE_STRING):
+		$case $Type.has_tagof(CUSTOM_FMT_TAG_SLICE_STRING):
 			f.format_any(val, $indent_count, $top_level, true, true);
-		$case $Type.has_tagof(CustomFmtTag.STRUCT_STRING):
+		$case $Type.has_tagof(CUSTOM_FMT_TAG_STRUCT_STRING):
 			f.format_any(val, $indent_count, $top_level, true, true);
 		$default:
 			f.format_any(val, $indent_count, $top_level, true);
 		$endswitch
 	$case STRUCT:
 	$case BITSTRUCT:
-		$if $Type.has_tagof(CustomFmtTag.STRUCT_STRING):
+		$if $Type.has_tagof(CUSTOM_FMT_TAG_STRUCT_STRING):
 			f.format_struct(val, $indent_count, $top_level, true);
 		$else
 			$switch $Type:
@@ -68,7 +75,7 @@ macro void Formatter.format_any(
 		$endif
 	$case ARRAY:
 	$case SLICE:
-		$if $parse_next_array_as_string || $Type.has_tagof(CustomFmtTag.SLICE_STRING):
+		$if $parse_next_array_as_string:
 			f.format_string(val, $indent_count, $top_level);
 		$else
 			f.format_array(val, $indent_count, $top_level);

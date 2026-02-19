@@ -128,9 +128,9 @@ macro void Parser.parse_any(
 	$switch ($kind):
 	$case DISTINCT:
 		$switch:
-		$case $Type.has_tagof(CustomFmtTag.SLICE_STRING):
+		$case $Type.has_tagof(CUSTOM_FMT_TAG_SLICE_STRING):
 			parser.parse_any(out_val, true, true);
-		$case $Type.has_tagof(CustomFmtTag.STRUCT_STRING):
+		$case $Type.has_tagof(CUSTOM_FMT_TAG_STRUCT_STRING):
 			parser.parse_any(out_val, true, true);
 		$case $Type == DString:
 			parser.parse_any(out_val, true, true);
@@ -141,7 +141,7 @@ macro void Parser.parse_any(
 		$endswitch
 	$case STRUCT:
 	$case BITSTRUCT:
-		$if $Type.has_tagof(CustomFmtTag.STRUCT_STRING):
+		$if $Type.has_tagof(CUSTOM_FMT_TAG_STRUCT_STRING):
 			parser.parse_struct(out_val, true);
 		$else
 			$switch $Type:
@@ -225,8 +225,8 @@ macro void Parser.parse_struct(
 		$if $mem.nameof.len:
 			var $MemType = $mem.typeid;
 			bool $is_distinct = $mem.kindof == DISTINCT;
-			bool $has_slice_str_tag = $MemType.has_tagof(CustomFmtTag.SLICE_STRING);
-			bool $has_struct_str_tag = $MemType.has_tagof(CustomFmtTag.STRUCT_STRING);
+			bool $has_slice_str_tag = $MemType.has_tagof(CUSTOM_FMT_TAG_SLICE_STRING);
+			bool $has_struct_str_tag = $MemType.has_tagof(CUSTOM_FMT_TAG_STRUCT_STRING);
 			bool $has_any_str_tag = $has_slice_str_tag || $has_struct_str_tag;
 
 			$if $is_distinct:

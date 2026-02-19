@@ -23,7 +23,7 @@
 alias StackString = ElasticArray{char, 32};
 
 // Mark type to treat it as string, not array of bytes and format differently
-struct St @tag(CustomFmtTag.STRUCT_STRING, 1)
+struct St @tag(CUSTOM_FMT_TAG_STRUCT_STRING, 1)
 {
 	StackString name;
 	int         age;
@@ -39,7 +39,7 @@ enum InnerType
 	GOBLIN
 }
 
-struct Inner @tag(CustomFmtTag.STRUCT_STRING, 1)
+struct Inner @tag(CUSTOM_FMT_TAG_STRUCT_STRING, 1)
 {
 	StackString name;
 	InnerType 	type;
@@ -95,7 +95,7 @@ fn void example_text_simple(Serializer* serializer, bool should_write)
 
 // More Complex example (object with heap-allocated data - requires implementation of the interface)
 
-struct Entity @tag(CustomFmtTag.STRUCT_STRING, 1)
+struct Entity @tag(CUSTOM_FMT_TAG_STRUCT_STRING, 1)
 {
 	StackString name;
 	int         age;

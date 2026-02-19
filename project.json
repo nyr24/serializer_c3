@@ -5,16 +5,17 @@
   "authors": [ "nyr24" ],
   "version": "1.0.0",
   "sources": [ "src/**" ],
+  "test-sources": [ "tests/**" ],
   "build-dir": "build",
   "output": "build",
   "targets": {
-    "ser": {
+    "ser_static_lib": {
       "type": "static-lib",
     },
-    "ser_test": {
-      "type": "executable",
+    "ser_dyn_lib": {
+      "type": "dynamic-lib",
     }
   },
   "cpu": "generic",
-  "opt": "O0"
+  "opt": "O3"
 }

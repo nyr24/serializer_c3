@@ -1,7 +1,7 @@
 ## Data serializer (binary & text) implemented in C3 programming language
 
 ## Notes
-- Supported std::collections for know (List, DString, HashMap)
+- Currently supported std::collections (List, DString, HashMap)
 - Serialization of data without pointers should work out of the box 
 - To serialize data with pointers (heap-allocated data, interfaces, etc.) you should implement interface yourself (watch implementations for std::collections in std_containers_impl.c3)
 
@@ -14,9 +14,8 @@
 ## Build
 -	static-lib
 	`c3c build`
--	executable (for tests/examples)
-	- `c3c build ser_test && c3c run ser_test -- 1` // write output to files + read from them
-	- `c3c run ser_test` // only read from the files (Note: you should execute previous command first for this to work properly)
+-	dynamic-lib
+	`c3c build ser_dyn_lib`
 
 ## Examples
 ```cpp

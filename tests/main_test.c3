@@ -24,6 +24,7 @@ fn void main_test() @test
 	const EXAMPLE_TEXT_DSTRING = true;
 	const EXAMPLE_TEXT_HASHMAP = true;
 	const EXAMPLE_TEXT_ENTITY = true;
+	const EXAMPLE_TEXT_DIFF_FORMATS = true;
 	const EXAMPLE_MULTIPLE = true;
 
 	const SHOULD_WRITE = true;
@@ -70,6 +71,10 @@ fn void main_test() @test
 
 	if (EXAMPLE_TEXT_ENTITY) {
 		example_text_entity(&serializer, SHOULD_WRITE);
+	}
+
+	if (EXAMPLE_TEXT_DIFF_FORMATS) {
+		example_text_diff_formats(&serializer, SHOULD_WRITE);
 	}
 
 	if (EXAMPLE_MULTIPLE) {
@@ -393,6 +398,22 @@ fn void example_text_entity(Serializer* serializer, bool should_write)
 	en.print();
 }
 
+fn void example_text_diff_formats(Serializer* serializer, bool should_write)
+{
+	serializer.reset_state();
+	String f_name = ser::acquire_file_fmt_name("example.diff_formats", TEXT);
+
+	DiffFormat diff_fmt;
+		
+	if (should_write) {
+		diff_fmt.init("hello", &&{1,2,3,4,5}, &&{1,2,3,4,5}, &&{1,2,3,4,5,6,7,8,9});
+		serializer.serialize_to_text_and_save_to_file(&diff_fmt, tmem, f_name, false, $sizeof(diff_fmt));
+	}
+
+	serializer.deserialize_from_text(&diff_fmt, tmem, f_name);
+	diff_fmt.print();
+}
+
 // Implementation on complex structure (some part - stack, some part - heap)
 
 fn void Entity.init(
@@ -586,4 +607,25 @@ fn void MathStruct.print(&self)
 	io::printfn("MatStruct:");
 	io::printfn("%s", self.mat4.m);
 	io::printfn("%s\n", self.vec4);
+}
+
+struct DiffFormat
+{
+	char[5] 	str  @tag(SCHEMA_FMT_TAG, SchemaFormatKind.STRING);
+	char[5]		def  @tag(SCHEMA_FMT_TAG, SchemaFormatKind.DEFAULT);
+	char[5]     vec  @tag(SCHEMA_FMT_TAG, SchemaFormatKind.VECTOR);
+	char[9]     mat  @tag(SCHEMA_FMT_TAG, SchemaFormatKind.MATRIX);
+}
+
+fn void DiffFormat.init(&diff_fmt, char[5]* str, char[5]* nums, char[5]* vec, char[9]* mat)
+{
+	mem::copy(&diff_fmt.str, str, str.len);
+	mem::copy(&diff_fmt.def, nums, nums.len);
+	mem::copy(&diff_fmt.vec, vec, vec.len);
+	mem::copy(&diff_fmt.mat, mat, mat.len);
+}
+
+fn void DiffFormat.print(&diff_fmt)
+{
+	io::printfn("DiffFormat: %s, %s, %s, %s", diff_fmt.str, diff_fmt.def, diff_fmt.vec, diff_fmt.mat);
 }

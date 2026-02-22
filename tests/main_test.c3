@@ -488,7 +488,7 @@ fn void Entity.deserialize_from_text(&entity, Parser* parser, Allocator alloc, S
 alias StackString = ElasticArray{char, 32};
 
 // Mark type to treat it as string, not array of bytes and format differently
-struct St (Printable) @tag(CUSTOM_FMT_TAG_STRUCT_STRING, 1)
+struct St (Printable) @tag(SCHEMA_FMT_TAG, SchemaFormatKind.STRING)
 {
 	StackString name;
 	int         age;
@@ -504,10 +504,16 @@ enum InnerType
 	GOBLIN
 }
 
-struct Inner (Printable) @tag(CUSTOM_FMT_TAG_STRUCT_STRING, 1)
+struct Inner (Printable) @tag(SCHEMA_FMT_TAG, SchemaFormatKind.STRING)
 {
 	StackString name;
 	InnerType 	type;
+}
+
+struct InnerSchema
+{
+	SchemaFormatKind 	name;
+	SchemaFormatKind	type;
 }
 
 fn void St.init(&new, char[5]* name, int age, float money, bool is_married = true, char[] inner_name = "inner1", InnerType inner_type = TROLL)
@@ -545,7 +551,7 @@ fn void Inner.print(&inner)
 	io::printf("\tInner: %s %s\n", (String)inner.name.array_view(), inner.type);
 }
 
-struct Entity @tag(CUSTOM_FMT_TAG_STRUCT_STRING, 1)
+struct Entity
 {
 	StackString name;
 	int         age;

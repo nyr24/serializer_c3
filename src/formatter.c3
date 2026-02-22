@@ -2,14 +2,24 @@ module ser;
 
 import std::io;
 import std::math::matrix;
+import std::collections::maybe;
 import util;
 
-// for char slices/arrays that user wants to format as strings
-const CUSTOM_FMT_TAG_SLICE_STRING 	= "FMT_SLICE_STRING";
-// for structs which have char arrays inside (ElasticArray{char, 20})
-const CUSTOM_FMT_TAG_STRUCT_STRING 	= "FMT_STRUCT_STRING";
-
+// If user wants to apply a custom format to the type
+// value should be of type SchemaFormatKind
+const SCHEMA_FMT_TAG = "SCHEMA_FMT_TAG";
 const INDENT_SYMBOL = '\t';
+
+faultdef
+	NO_TAG_FOUND;
+
+enum SchemaFormatKind
+{
+	DEFAULT,
+	STRING,
+	VECTOR,
+	MATRIX,
+}
 
 <*
 	Infers type from the passed value
@@ -18,19 +28,19 @@ const INDENT_SYMBOL = '\t';
 *>
 macro void Formatter.format_to_text(&f, val)
 {
-	return f.format_any(val, 0, true, false, false);
+	return f.format_any(val);
 }
 
 macro void Formatter.format_any(
 	&f,
-	val,
+	curr_val,
+	SchemaFormatKind $fmt_kind = DEFAULT,
 	char $indent_count = 0,
 	bool $top_level = false,
 	bool $unwrap_distinct = false,
-	bool $parse_next_array_as_string = false,
 ) @private
 {
-	var $Type = $typeof(val);
+	var $Type = $typeof(curr_val);
 	var $kind = $Type.kindof;
 
 	$if $kind == POINTER:
@@ -39,49 +49,61 @@ macro void Formatter.format_any(
 	$endif
 
 	$if $unwrap_distinct && $kind == DISTINCT:
+		$fmt_kind = $Type.has_tagof(SCHEMA_FMT_TAG) ??? $Type.tagof(SCHEMA_FMT_TAG) : $fmt_kind;
 		$Type = $Type.inner;
 		$kind = $Type.kindof;
 	$endif
 
+	$if $kind == STRUCT:
+		$fmt_kind = $Type.has_tagof(SCHEMA_FMT_TAG) ??? $Type.tagof(SCHEMA_FMT_TAG) : $fmt_kind;
+	$endif
+
+// Tag takes the priority over $curr_$fmt_kind
+	var dereffed_val = util::@deref_if_ptr(curr_val);
+
 // NOTE: DEBUG
-	// io::printfn("Formatter: value: %s kind: %s, $unwrap_dist: %s, $arr_as_str: %s", val, $kind, $unwrap_distinct, $parse_next_array_as_string);
+	// io::printfn("Formatter:\n\tdereffed value: %s\n\tkind: %s\n\tcurr_format: %s\n", dereffed_val, $kind, $fmt_kind);
 
  	$switch $kind:
 	$case DISTINCT:
-		$switch:
-		$case $Type.has_tagof(CUSTOM_FMT_TAG_SLICE_STRING):
-			f.format_any(val, $indent_count, $top_level, true, true);
-		$case $Type.has_tagof(CUSTOM_FMT_TAG_STRUCT_STRING):
-			f.format_any(val, $indent_count, $top_level, true, true);
-		$default:
-			f.format_any(val, $indent_count, $top_level, true);
-		$endswitch
+		f.format_any(dereffed_val, $fmt_kind, $indent_count, $top_level, true);
 	$case STRUCT:
 	$case BITSTRUCT:
-		$if $Type.has_tagof(CUSTOM_FMT_TAG_STRUCT_STRING):
-			f.format_struct(val, $indent_count, $top_level, true);
-		$else
-			$switch $Type:
-			$case Matrix2x2{float}:
-			$case Matrix3x3{float}:
-			$case Matrix4x4{float}:
-			$case Matrix2x2{double}:
-			$case Matrix3x3{double}:
-			$case Matrix4x4{double}:
-				f.format_mat(val, $indent_count, $top_level);
-			$default:
-				f.format_struct(val, $indent_count, $top_level, $parse_next_array_as_string);
-			$endswitch
-		$endif
+		$switch $Type:
+		$case Matrix2x2{float}:
+		$case Matrix3x3{float}:
+		$case Matrix4x4{float}:
+		$case Matrix2x2{double}:
+		$case Matrix3x3{double}:
+		$case Matrix4x4{double}:
+			f.format_mat(dereffed_val.m[:curr_val.m.len], $indent_count, $top_level);
+		$default:
+			f.format_struct(dereffed_val, $fmt_kind, $indent_count, $top_level);
+		$endswitch
 	$case ARRAY:
+		$switch ($fmt_kind):
+		$case SchemaFormatKind.STRING:
+			f.format_string(dereffed_val[:curr_val.len], $indent_count, $top_level);
+		$case SchemaFormatKind.VECTOR:
+			f.format_vec(dereffed_val[:curr_val.len], $indent_count, $top_level);
+		$case SchemaFormatKind.MATRIX:
+			f.format_mat(dereffed_val[:curr_val.len], $indent_count, $top_level);
+		$default:
+			f.format_array(dereffed_val[:curr_val.len], $fmt_kind, $indent_count, $top_level);
+		$endswitch
 	$case SLICE:
-		$if $parse_next_array_as_string:
-			f.format_string(val, $indent_count, $top_level);
-		$else
-			f.format_array(val, $indent_count, $top_level);
-		$endif
+		$switch ($fmt_kind):
+		$case SchemaFormatKind.STRING:
+			f.format_string(dereffed_val, $indent_count, $top_level);
+		$case SchemaFormatKind.VECTOR:
+			f.format_vec(dereffed_val, $indent_count, $top_level);
+		$case SchemaFormatKind.MATRIX:
+			f.format_mat(dereffed_val, $indent_count, $top_level);
+		$default:
+			f.format_array(dereffed_val, $fmt_kind, $indent_count, $top_level);
+		$endswitch
 	$case VECTOR:
-		f.format_vec(val, $indent_count, $top_level);
+		f.format_vec(dereffed_val, $indent_count, $top_level);
 	$case BOOL:
 	$case SIGNED_INT:
 	$case UNSIGNED_INT:
@@ -89,10 +111,108 @@ macro void Formatter.format_any(
 	$case TYPEID:
 	$case ENUM:
 	$case CONST_ENUM:
-		f.format_primitive(val, $kind, $indent_count, $top_level);
+		f.format_primitive(dereffed_val, $kind, $indent_count, $top_level);
 	$default:
 		unreachable("Type kind is not supported for formatting: %s", $kind);
 	$endswitch
+}
+
+<*
+	Introspect struct and print it to a formatter
+	@require util::@is_kindof_val(val, STRUCT, BITSTRUCT, DISTINCT, POINTER)
+		: "TypeKind should be one of: STRUCT, BITSTRUCT, DISTINCT, POINTER"
+*>
+macro void Formatter.format_struct(
+	&f,
+	val,
+	SchemaFormatKind $fmt_kind = DEFAULT,
+	char $indent_count = 0,
+	bool $top_level = false,
+) @private
+{
+	String $base_indent_s = @get_indent($indent_count);
+	String $inner_indent_s = $base_indent_s +++ INDENT_SYMBOL;
+	var $Type = util::@get_pointee_type_val(val);
+
+	$if $top_level:
+	    f.print("\n" +++ $base_indent_s +++ "{\n")!!;
+	$else
+	    f.print($base_indent_s +++ "{\n")!!;
+	$endif
+
+	$for var $i = 0; $i < $Type.membersof.len; ++$i:
+		var $member = $Type.membersof[$i];
+		var $name = $member.nameof;
+
+        $if $i > 0:
+            f.print(",\n")!!;
+        $endif
+        $if $name != "":
+            f.printf($inner_indent_s +++ "; %s\n", $name)!!;
+			var $MemType = $member.typeid;
+
+			SchemaFormatKind $next_fmt_kind = $fmt_kind;
+
+			$if $MemType.has_tagof(SCHEMA_FMT_TAG):
+				var $acquired_fmt_from_tag = $MemType.tagof(SCHEMA_FMT_TAG);
+				$if $acquired_fmt_from_tag != DEFAULT:
+					$next_fmt_kind = $acquired_fmt_from_tag;
+				$endif
+			$endif
+
+			$switch:
+				// NOTE: ElasticArray special case
+			$case $defined(val.array_view()) && $MemType.kindof == ARRAY:
+				f.format_any(val.array_view(), $next_fmt_kind, $indent_count + 1, false, false);
+				// NOTE: DString special case
+			$case $defined(val.str_view()) && $MemType.kindof == ARRAY:
+				f.format_any(val.str_view(), SchemaFormatKind.STRING, $indent_count + 1, false, false);
+			$default:
+				f.format_any(&val.$eval($name), $next_fmt_kind, $indent_count + 1, false, false);
+			$endswitch
+		$endif
+	$endfor
+
+	f.print("\n" +++ $base_indent_s +++ "}")!!;
+
+	$if $top_level:
+		f.print("\n")!!;
+	$endif
+}
+
+<*
+	Introspect array and print it to a formatter
+	@require util::@is_kindof_val(val, ARRAY, SLICE, DISTINCT, POINTER)
+		: "TypeKind should be one of: ARRAY, SLICE, DISTINCT, POINTER"
+*>
+macro void Formatter.format_array(
+	&f,
+	val,
+	SchemaFormatKind $fmt_kind = DEFAULT,
+	char $indent_count = 0,
+	bool $top_level = false,
+) @private
+{
+	String $indent_str = @get_indent($indent_count);
+
+	$if $top_level:
+	    f.print("\n" +++ $indent_str +++ "[\n")!!;
+	$else
+	    f.print($indent_str +++ "[\n")!!;
+	$endif
+
+	foreach (uint i, &member : util::@deref_if_ptr(val)) {
+		if (i > 0) {
+            f.print(",\n")!!;
+		}
+		f.format_any(member, $fmt_kind, $indent_count + 1);
+	}
+
+	f.print("\n" +++ $indent_str +++ "]")!!;
+
+	$if $top_level:
+		f.print("\n")!!;
+	$endif
 }
 
 <*
@@ -131,93 +251,9 @@ macro void Formatter.format_primitive(
 }
 
 <*
-	Introspect struct and print it to a formatter
-	@require util::@is_kindof_val(val, STRUCT, BITSTRUCT, DISTINCT, POINTER)
-		: "TypeKind should be one of: STRUCT, BITSTRUCT, DISTINCT, POINTER"
-*>
-macro void Formatter.format_struct(
-	&f,
-	val,
-	char $indent_count = 0,
-	bool $top_level = false,
-	bool $parse_next_array_as_string = false,
-) @private 
-{
-	String $base_indent_s = @get_indent($indent_count);
-	String $inner_indent_s = $base_indent_s +++ INDENT_SYMBOL;
-	var $Type = util::@get_pointee_type_val(val); 
-
-	$if $top_level:
-	    f.print("\n" +++ $base_indent_s +++ "{\n")!!;
-	$else
-	    f.print($base_indent_s +++ "{\n")!!;
-	$endif
-	
-    $foreach $i, $member : $Type.membersof:
-        $if $i > 0:
-            f.print(",\n")!!;
-        $endif
-        $if $member.nameof != "":
-            f.printf($inner_indent_s +++ "; %s\n", $member.nameof)!!;
-			var $MemType = $member.typeid;
-			$switch:
-			// NOTE: ElasticArray special case
-			$case $MemType.kindof == ARRAY &&& $defined(val.array_view()):
-				f.format_any(val.array_view(), $indent_count + 1, false, false, $parse_next_array_as_string);
-			// NOTE: DString special case
-			$case $MemType.kindof == ARRAY &&& $defined(val.str_view()):
-				f.format_any(val.str_view(), $indent_count + 1, false, false, $parse_next_array_as_string);
-			$default:
-				f.format_any(val.$eval($member.nameof), $indent_count + 1, false, false, $parse_next_array_as_string);
-			$endswitch
-		$endif
-	$endforeach
-
-	f.print("\n" +++ $base_indent_s +++ "}")!!;
-
-	$if $top_level:
-		f.print("\n")!!;
-	$endif
-}
-
-<*
-	Introspect array and print it to a formatter
-	@require util::@is_kindof_val(val, ARRAY, SLICE, DISTINCT, POINTER)
-		: "TypeKind should be one of: ARRAY, SLICE, DISTINCT"
-*>
-macro void Formatter.format_array(
-	&f,
-	val,
-	char $indent_count = 0,
-	bool $top_level = false,
-) @private
-{
-	String $indent_str = @get_indent($indent_count);
-
-	$if $top_level:
-	    f.print("\n" +++ $indent_str +++ "[\n")!!;
-	$else
-	    f.print($indent_str +++ "[\n")!!;
-	$endif
-
-	foreach (uint i, member : val) {
-		if (i > 0) {
-            f.print(",\n")!!;
-		}
-		f.format_any(member, $indent_count + 1);
-	}
-
-	f.print("\n" +++ $indent_str +++ "]")!!;
-
-	$if $top_level:
-		f.print("\n")!!;
-	$endif
-}
-
-<*
 	Introspect string and print it to a formatter
-	@require util::is_kindof($typeof(val), ARRAY, SLICE, DISTINCT)
-		: "TypeKind should be one of: ARRAY, SLICE, DISTINCT"
+	@require util::is_kindof($typeof(val), ARRAY, SLICE, DISTINCT, POINTER)
+		: "TypeKind should be one of: ARRAY, SLICE, DISTINCT, POINTER"
 	@require util::@get_innermost_type_val(val) == char : "Should be char as underlying type"
 *>
 macro void Formatter.format_string(
@@ -235,7 +271,8 @@ macro void Formatter.format_string(
 	    f.print($indent_str +++ "\"")!!;
 	$endif
 
-	f.printf("%s\"", (String)val[..])!!;
+	var dereffed_val = util::@deref_if_ptr(val);
+	f.printf("%s\"", (String)dereffed_val[:val.len])!!;
 
 	$if $top_level:
 		f.print("\n")!!;
@@ -244,12 +281,12 @@ macro void Formatter.format_string(
 
 <*
 	Introspect vector and print it to a formatter
-	@require util::is_kindof($typeof(val), VECTOR)
-		: "TypeKind should be one of: ARRAY, SLICE, DISTINCT"
+	@require util::is_kindof($typeof(vec), VECTOR, SLICE, ARRAY, POINTER)
+		: "TypeKind should be VECTOR, SLICE, ARRAY, POINTER"
 *>
 macro void Formatter.format_vec(
 	&f,
-	val,
+	vec,
 	char $indent_count = 0,
 	bool $top_level = true,
 ) @private
@@ -262,7 +299,7 @@ macro void Formatter.format_vec(
 	    f.print($indent_str)!!;
 	$endif
 
-	f.printf("%s", val)!!;
+	f.printf("%s", util::@deref_if_ptr(vec))!!;
 
 	$if $top_level:
 		f.print("\n")!!;
@@ -271,7 +308,7 @@ macro void Formatter.format_vec(
 
 <*
 	Introspect matrix and print it to a formatter
-	@require util::is_kindof($typeof(mat), STRUCT) : "TypeKind should be STRUCT"
+	@require util::is_kindof($typeof(mat), SLICE, ARRAY) : "TypeKind should be SLICE or ARRAY"
 *>
 macro void Formatter.format_mat(
 	&f,
@@ -291,40 +328,42 @@ macro void Formatter.format_mat(
 	    f.print($base_indent_s +++ $mat_start +++ "\n")!!;
 	$endif
 
-	uint $cols = 2;
+	uint cols = 2;
 
-	$switch (mat.m.len):
-	$case 4:
-		$cols = 2;
-	$case 9:
-		$cols = 3;
-	$case 16:
-		$cols = 4;
-	$default:
-		unreachable("Unsupported number of elements for matrix: %d", mat.m.len);
-	$endswitch
+	switch (mat.len) {
+	case 4:
+		cols = 2;
+	case 9:
+		cols = 3;
+	case 16:
+		cols = 4;
+	default:
+		unreachable("Unsupported number of elements for matrix: %d", mat.len);
+	}
+	uint rows = cols;
 
-	uint $rows = $cols;
+	for (uint x = 0; x < rows; ++x) {
 
-	$for uint $x = 0; $x < $rows; ++$x:
-		$for uint $y = 0; $y < $cols; ++$y:
-			$if $y == 0:
+		for (uint y = 0; y < cols; ++y) {
+			if (y == 0) {
 				f.print($inner_indent_s)!!;
-			$endif
+			}
 
-			f.printf("%s", mat.m[$x * $cols + $y])!!;
-			$if $x * $cols + $y < mat.m.len - 1:
+			f.printf("%s", mat[x * cols + y])!!;
+
+			if (x * cols + y < mat.len - 1) {
 				f.printf(", ")!!;
-			$endif
-		$endfor
+			}
+		}
 
-		$if $x < $rows - 1:
+		if (x < rows - 1) {
 			f.print("\n")!!;
-		$else
+		}
+		else {
 			f.print("\n" +++ $base_indent_s +++ $mat_end)!!;
-		$endif
-	$endfor
-	
+		}
+	}
+
 	$if $top_level:
 		f.print("\n")!!;
 	$endif

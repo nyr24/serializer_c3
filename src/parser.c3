@@ -91,14 +91,14 @@ macro void Parser.parse_curr_value_and_skip_to_next(&parser, out_val, bool is_la
 *>
 macro void Parser.parse_recur_into(&parser, out_val)
 {
-	parser.parse_any(out_val);
+	parser.parse_any(out_val, SchemaFormatKind.DEFAULT);
 }
 
 macro void Parser.parse_any(
 	&parser,
-	out_val,
+	curr_val,
+	SchemaFormatKind $fmt_kind = DEFAULT,
 	bool $unwrap_distinct = false,
-	bool $parse_next_array_as_string = false,
 )
 {
 	parser.skip_ws();
@@ -108,7 +108,7 @@ macro void Parser.parse_any(
 		parser.skip_ws();
 	}
 
-	var $Type = $typeof(out_val);
+	var $Type = $typeof(curr_val);
 	var $kind = $Type.kindof;
 
 	$if $kind == POINTER:
@@ -117,92 +117,75 @@ macro void Parser.parse_any(
 	$endif
 
 	$if $unwrap_distinct && $kind == DISTINCT:
+		$fmt_kind = $Type.has_tagof(SCHEMA_FMT_TAG) ??? $Type.tagof(SCHEMA_FMT_TAG) : $fmt_kind;
 		$Type = $Type.inner;
 		$kind = $Type.kindof;
 	$endif
 
+	$if $kind == STRUCT:
+		$fmt_kind = $Type.has_tagof(SCHEMA_FMT_TAG) ??? $Type.tagof(SCHEMA_FMT_TAG) : $fmt_kind;
+	$endif
+
 // NOTE: DEBUG
-	// io::printfn("Parser: curr char: %c, index: %d remain_distance: %d kind: %s, $unwrap_dist: %s, $arr_as_str: %s", parser.curr_char(), parser.curr, parser.end - parser.curr, $kind, $unwrap_distinct, $parse_next_array_as_string);
-	// parser.debug_view();
+	// io::printfn("Parser: curr char: %c, index: %d remain_distance: %d kind: %s, $unwrap_dist: %s", parser.curr_char(), parser.curr, parser.end - parser.curr, $kind, $unwrap_distinct);
 
 	$switch ($kind):
 	$case DISTINCT:
-		$switch:
-		$case $Type.has_tagof(CUSTOM_FMT_TAG_SLICE_STRING):
-			parser.parse_any(out_val, true, true);
-		$case $Type.has_tagof(CUSTOM_FMT_TAG_STRUCT_STRING):
-			parser.parse_any(out_val, true, true);
-		$case $Type == DString:
-			parser.parse_any(out_val, true, true);
-		$case $Type == String:
-			parser.parse_any(out_val, true, true);
-		$default:
-			parser.parse_any(out_val, true);
-		$endswitch
+		parser.parse_any(curr_val, $fmt_kind, true);
 	$case STRUCT:
 	$case BITSTRUCT:
-		$if $Type.has_tagof(CUSTOM_FMT_TAG_STRUCT_STRING):
-			parser.parse_struct(out_val, true);
-		$else
-			$switch $Type:
-			$case Matrix2x2{float}:
-			$case Matrix3x3{float}:
-			$case Matrix4x4{float}:
-			$case Matrix2x2{double}:
-			$case Matrix3x3{double}:
-			$case Matrix4x4{double}:
-				parser.parse_mat(out_val);
-			$default:
-				parser.parse_struct(out_val, $parse_next_array_as_string);
-			$endswitch
-		$endif
+		$switch $Type:
+		$case Matrix2x2{float}:
+		$case Matrix3x3{float}:
+		$case Matrix4x4{float}:
+		$case Matrix2x2{double}:
+		$case Matrix3x3{double}:
+		$case Matrix4x4{double}:
+			parser.parse_mat(curr_val.m[:curr_val.m.len]);
+		$default:
+			parser.parse_struct(curr_val, $fmt_kind);
+		$endswitch
 	$case ARRAY:
-		$if $parse_next_array_as_string:
-			parser.parse_string(out_val[:out_val.len]);
-		$else
-			parser.parse_array(out_val[:out_val.len]);
-		$endif
+		$switch ($fmt_kind):
+		$case SchemaFormatKind.STRING:
+			parser.parse_string(curr_val[:curr_val.len]);
+		$case SchemaFormatKind.VECTOR:
+			parser.parse_vec(curr_val[:curr_val.len]);
+		$case SchemaFormatKind.MATRIX:
+			parser.parse_mat(curr_val[:curr_val.len]);
+		$default:
+			parser.parse_array(curr_val[:curr_val.len], $fmt_kind);
+		$endswitch
 	$case SLICE:
-		$if $parse_next_array_as_string:
-			parser.parse_string(out_val);
-		$else
-			parser.parse_array(out_val);
-		$endif
+		$switch ($fmt_kind):
+		$case SchemaFormatKind.STRING:
+			parser.parse_string(curr_val);
+		$case SchemaFormatKind.VECTOR:
+			parser.parse_vec(curr_val);
+		$case SchemaFormatKind.MATRIX:
+			parser.parse_mat(curr_val);
+		$default:
+			parser.parse_array(curr_val, $fmt_kind);
+		$endswitch
 	$case VECTOR:
-		parser.parse_vec(out_val);
+		parser.parse_vec(curr_val);
 	$case SIGNED_INT:
 	$case UNSIGNED_INT:
 	$case FLOAT:
-		parser.parse_number(out_val);
+		parser.parse_number(curr_val);
 	$case BOOL:
-		parser.parse_boolean(out_val);
+		parser.parse_boolean(curr_val);
 	$case ENUM:
-		parser.parse_plain_enum(out_val);
+		parser.parse_plain_enum(curr_val);
 	$case CONST_ENUM:
-		parser.parse_const_enum(out_val);
+		parser.parse_const_enum(curr_val);
 	$default:
-		unreachable("Unsupported type for parsing: %s, value: %s", $Type, out_val);
+		unreachable("Unsupported type for parsing: %s, value: %s", $Type, curr_val);
 	$endswitch
-	
+
 	if (parser.skip_until_next_value_start()) {
 		return;
 	}
-}
-
-<*
-	@require util::is_kindof($typeof(out_array), SLICE, POINTER, DISTINCT) : "Should be a slice or pointer to array"
-	@require parser.curr_char() == TokenChar.ARRAY_START : "Should be at the start of array"
-*>
-macro void Parser.parse_array(&parser, out_array)
-{
-	parser.step();
-	assert(!parser.is_at_end(), "Shouldn't be at the end here");
-	
-	foreach (&item : out_array) {
-		parser.parse_any(item);
-	}
-
-	parser.skip_until_array_end();
 }
 
 <*
@@ -212,7 +195,7 @@ macro void Parser.parse_array(&parser, out_array)
 macro void Parser.parse_struct(
 	&parser,
 	out_value,
-	bool $parse_next_array_as_string = false,
+	SchemaFormatKind $fmt_kind = DEFAULT,
 )
 {
 	parser.step();
@@ -222,35 +205,62 @@ macro void Parser.parse_struct(
 	var $Type = util::@get_pointee_type_val(out_value);
 
 	$foreach $mem : $Type.membersof:
-		$if $mem.nameof.len:
+		var $name = $mem.nameof;
+		$if $name.len:
 			var $MemType = $mem.typeid;
 			bool $is_distinct = $mem.kindof == DISTINCT;
-			bool $has_slice_str_tag = $MemType.has_tagof(CUSTOM_FMT_TAG_SLICE_STRING);
-			bool $has_struct_str_tag = $MemType.has_tagof(CUSTOM_FMT_TAG_STRUCT_STRING);
-			bool $has_any_str_tag = $has_slice_str_tag || $has_struct_str_tag;
+
+			SchemaFormatKind $next_fmt_kind = $fmt_kind;
+
+			$if $MemType.has_tagof(SCHEMA_FMT_TAG):
+				var $acquired_fmt_from_tag = $MemType.tagof(SCHEMA_FMT_TAG);
+				$if $acquired_fmt_from_tag != DEFAULT:
+					$next_fmt_kind = $acquired_fmt_from_tag;
+				$endif
+			$endif
 
 			$if $is_distinct:
-				parser.parse_any(out_value.$eval($mem.nameof)[..], true, $parse_next_array_as_string || $has_any_str_tag);
+				parser.parse_any(&out_value.$eval($name), $next_fmt_kind, true);
 			$else
 				$if $mem.kindof == ARRAY:
 					$switch:
-					// NOTE: ElasticArray special case
+						// NOTE: ElasticArray special case
 					$case $defined(out_value.array_view()):
-						parser.parse_any(out_value.array_view(), false, $parse_next_array_as_string);
-					// NOTE: DString special case
+						parser.parse_any(out_value.array_view(), $next_fmt_kind);
+						// NOTE: DString special case
 					$case $defined(out_value.str_view()):
-						parser.parse_any(out_value.str_view(), false, true);
+						parser.parse_any(out_value.str_view(), STRING);
 					$default:
-						parser.parse_any(out_value.$eval($mem.nameof)[..], false, $parse_next_array_as_string);
+						parser.parse_any(out_value.$eval($name)[..], $next_fmt_kind);
 					$endswitch
 				$else
-					parser.parse_any(&out_value.$eval($mem.nameof), false, $parse_next_array_as_string || $has_struct_str_tag);
+					parser.parse_any(&out_value.$eval($name), $next_fmt_kind);
 				$endif
 			$endif
 		$endif
 	$endforeach
 
 	parser.skip_until_struct_end();
+}
+
+<*
+	@require util::is_kindof($typeof(out_array), SLICE, POINTER, DISTINCT) : "Should be a slice or pointer to array"
+	@require parser.curr_char() == TokenChar.ARRAY_START : "Should be at the start of array"
+*>
+macro void Parser.parse_array(
+	&parser,
+	out_array,
+	SchemaFormatKind $fmt_kind = DEFAULT,
+) @local
+{
+	parser.step();
+	assert(!parser.is_at_end(), "Shouldn't be at the end here");
+
+	foreach (&item : out_array) {
+		parser.parse_any(item, $fmt_kind);
+	}
+
+	parser.skip_until_array_end();
 }
 
 <*
@@ -302,7 +312,7 @@ macro void Parser.parse_mat(&parser, out_mat)
 	parser.step_n(2);
 	parser.skip_ws();
 
-	foreach (&mat_el : out_mat.m) {
+	foreach (&mat_el : out_mat) {
 		parser.parse_number(mat_el);
 		parser.skip_ws_or_comma();
 	}
@@ -340,6 +350,7 @@ fn void Parser.parse_boolean(&parser, bool* out_bool)
 
 <*
 	@require $typeof(out_value).kindof == POINTER : "Should be a pointer"
+	@require util::is_kindof($typeof(out_value).inner, UNSIGNED_INT, SIGNED_INT, FLOAT) : "Should be of number type"
 	@require parser.curr_char().is_digit() || is_digit_sign(parser.curr_char()) : "Character we currently on should be either a digit or a sign"
 *>
 macro void Parser.parse_number(&parser, out_value)
@@ -406,7 +417,7 @@ macro void Parser.parse_plain_enum(&parser, out_value)
 
 	var $EnumType = util::@get_pointee_type_val(out_value);
 	var $OrdinalType = $EnumType.inner;
-	
+
 	$switch ($OrdinalType.sizeof):
 	$case char.sizeof:
 	$case short.sizeof:

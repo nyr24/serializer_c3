@@ -84,7 +84,7 @@ fn void Serializer.init(&ser, Allocator alloc, usz buff_init_cap = 0)
 }
 
 // Serialization Bin
- 
+
 macro void Serializer.serialize_to_bin(
 	&ser,
 	val,
@@ -93,8 +93,8 @@ macro void Serializer.serialize_to_bin(
 )
 {
 	$if implements_serializable_to_bin(util::@get_pointee_type_val(val)):
-		val.serialize_to_bin(ser, alloc);
-	$else
+       	val.serialize_to_bin(ser, alloc);
+    $else
 		ser.append_bin_data_to_buff(util::to_byte_slice(val), alloc, should_free_memory);
 	$endif
 }
@@ -347,10 +347,10 @@ fn usz Serializer.read_file_into_buffer(&ser, SerializationMode mode, String fil
 	if (mode == TEXT) {
 		ser.parser.init(ser.buff.view_range_len(FileHeader.sizeof, header.contents_len));
 	}
-	
+
 	return header.contents_len;
 }
- 
+
 <*
 	Returns stored the length of file at time of last write
 	(actual length of the file can be different)

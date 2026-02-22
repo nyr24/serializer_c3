@@ -1,4 +1,4 @@
-// Implementation of Serializable interface for std collections 
+// Implementation of Serializable interface for std collections
 
 module std::collections::list <Type>;
 
@@ -79,7 +79,7 @@ fn void List.deserialize_from_text(&list, Parser* parser, Allocator alloc, Strin
 	parser.skip_until_next_value_start();
 	parser.parse_number(&list.capacity);
 	parser.skip_until_next_value_start();
-	Type[] entries = allocator::alloc_array(alloc, Type, list.capacity); 
+	Type[] entries = allocator::alloc_array(alloc, Type, list.capacity);
 	parser.parse_array(entries[:list.size]);
 	list.entries = entries.ptr;
 	list.allocator = alloc;
@@ -104,7 +104,7 @@ fn void DStringSerializedBin.free(&ser_repr, Allocator alloc)
 	allocator::free(alloc, &ser_repr);
 }
 
-struct DStringSerializedText @tag(ser::CUSTOM_FMT_TAG_STRUCT_STRING, 1)
+struct DStringSerializedText @tag(ser::SCHEMA_FMT_TAG, SchemaFormatKind.STRING)
 {
 	usz     len;
 	usz     capacity;
@@ -272,7 +272,7 @@ fn void HashMap.deserialize_from_text(&map, Parser* parser, Allocator alloc, Str
 	if (map.count > 0) {
 		Key[] keys = allocator::alloc_array(alloc, Key, map.count);
 		Value[] values = allocator::alloc_array(alloc, Value, map.count);
-	
+
 		parser.skip_until_next_value_start();
 		parser.parse_array(keys);
 		parser.skip_until_next_value_start();
@@ -283,4 +283,10 @@ fn void HashMap.deserialize_from_text(&map, Parser* parser, Allocator alloc, Str
 		}
 	}
 	parser.skip_until_struct_end();
+}
+
+// Fallback if user don't want to write a schema
+macro SchemaFormatKind HashMap.map_acquire_schema_fmt(&map, String $field_name) @local
+{
+	return SchemaFormatKind.DEFAULT;
 }

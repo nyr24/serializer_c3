@@ -1,6 +1,10 @@
 ## Data serializer (binary & text) implemented in C3 programming language
 
+## Goal
+- Orientation on performance, as little memory allocations as possible
+
 ## Notes
+- text serialization isn't Json/TOML, instead uses custom file format
 - Currently supported std::collections (List, DString, HashMap)
 - Serialization of data without pointers should work out of the box 
 - To serialize data with pointers (heap-allocated data, interfaces, etc.) you should implement interface yourself (watch implementations for std::collections in std_containers_impl.c3)
@@ -22,14 +26,14 @@
 
 alias StackString = ElasticArray{char, 32};
 
-// Mark type to treat it as string, not array of bytes and format differently
-struct St @tag(CUSTOM_FMT_TAG_STRUCT_STRING, 1)
+struct St
 {
-	StackString name;
+	// Mark member to treat it as string, not array of bytes and format differently
+	StackString name @tag(SCHEMA_FMT_TAG, SchemaFormatKind.STRING);
 	int         age;
 	float       money;
-	bool		is_married;
-	Inner		inner;
+	bool		    is_married;
+	Inner		    inner;
 }
 
 enum InnerType
@@ -39,9 +43,9 @@ enum InnerType
 	GOBLIN
 }
 
-struct Inner @tag(CUSTOM_FMT_TAG_STRUCT_STRING, 1)
+struct Inner
 {
-	StackString name;
+	StackString name @tag(SCHEMA_FMT_TAG, SchemaFormatKind.STRING);
 	InnerType 	type;
 }
 
@@ -93,16 +97,42 @@ fn void example_text_simple(Serializer* serializer, bool should_write)
 	}
 }
 
+// Different formats
+
+struct DiffFormat
+{
+	char[5] 	  str  @tag(SCHEMA_FMT_TAG, SchemaFormatKind.STRING);
+	char[5]		  def  @tag(SCHEMA_FMT_TAG, SchemaFormatKind.DEFAULT);
+	char[5]     vec  @tag(SCHEMA_FMT_TAG, SchemaFormatKind.VECTOR);
+	char[9]     mat  @tag(SCHEMA_FMT_TAG, SchemaFormatKind.MATRIX);
+}
+
+fn void example_text_diff_formats(Serializer* serializer, bool should_write)
+{
+	serializer.reset_state();
+	String f_name = ser::acquire_file_fmt_name("example.diff_formats", TEXT);
+
+	DiffFormat diff_fmt;
+		
+	if (should_write) {
+		diff_fmt.init("hello", &&{1,2,3,4,5}, &&{1,2,3,4,5}, &&{1,2,3,4,5,6,7,8,9});
+		serializer.serialize_to_text_and_save_to_file(&diff_fmt, tmem, f_name, false, $sizeof(diff_fmt));
+	}
+
+	serializer.deserialize_from_text(&diff_fmt, tmem, f_name);
+	diff_fmt.print();
+}
+
 // More Complex example (object with heap-allocated data - requires implementation of the interface)
 
-struct Entity @tag(CUSTOM_FMT_TAG_STRUCT_STRING, 1)
+struct Entity
 {
-	StackString name;
+	StackString name @tag(SCHEMA_FMT_TAG, SchemaFormatKind.STRING);
 	int         age;
 	double      money;
-	List{int}   textures; // NOTE: this implements interface too
-	DString     job_name; // NOTE: this implements interface too
-	HashMap{int, float} map; // NOTE: this implements interface too
+	List{int}   textures;
+	DString     job_name;
+	HashMap{int, float} map;
 }
 
 struct EntityStackPart
@@ -111,8 +141,6 @@ struct EntityStackPart
 	int         age;
 	double      money;
 }
-
-// Binary mode implementation
 
 fn void Entity.serialize_to_bin(&entity, Serializer* ser, Allocator alloc)
 {
@@ -137,8 +165,6 @@ fn void Entity.deserialize_from_bin(&entity, ChunkIterator* chunk_it, Allocator 
 	entity.map.deserialize_from_bin(chunk_it, alloc);
 }
 
-// Text mode implementation
-
 fn void Entity.serialize_to_text(&entity, Serializer* ser, Allocator alloc)
 {
 	EntityStackPart stack_p;
@@ -147,7 +173,7 @@ fn void Entity.serialize_to_text(&entity, Serializer* ser, Allocator alloc)
 	stack_p.money = entity.money;
 	
 	ser.append_text_data_to_buff(&stack_p, alloc, false);
-	ser.serialize_to_text(&entity.textures, alloc, false, entity.textures.byte_size()); // last argument is an optional hint how much memory will take text representation of this object
+	ser.serialize_to_text(&entity.textures, alloc, false, entity.textures.byte_size());
 	ser.serialize_to_text(&entity.job_name, alloc, false, entity.job_name.capacity() * char.sizeof);
 	ser.serialize_to_text(&entity.map, alloc, false, entity.map.threshold * $sizeof(*entity.map.table[0]));
 }
@@ -168,15 +194,15 @@ fn void Entity.deserialize_from_text(&entity, Parser* parser, Allocator alloc, S
 	entity.map.deserialize_from_text(parser, alloc, file_path);
 }
 
-/* File format for Text serialization example:
-{ (struct)
-	; field_1 (int)
+/* File format for Text serialization looks like this:
+{
+	; field_1
 	123,
-	; field_2 (string)
+	; field_2
 	"hello",
-	; field_3 (float)
+	; field_3
 	228.0,
-	; field_4 (array)
+	; field_4
 	[
 		{
 			123,
@@ -184,9 +210,9 @@ fn void Entity.deserialize_from_text(&entity, Parser* parser, Allocator alloc, S
 			228.0,
 		}
 	]
-	; field_5 (vector)
+	; field_5
 	[<1, 2, 3>]
-	; field_6 (matrix)
+	; field_6
 	[#
 		1, 1
 		2, 3

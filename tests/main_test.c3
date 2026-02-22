@@ -203,7 +203,6 @@ fn void example_text_simple(Serializer* serializer, bool should_write)
 	serializer.reset_state();
 	String f_name = ser::acquire_file_fmt_name("example.simple", TEXT);
 
-// Slice
 	St[3] s_ces;
 	if (should_write) {
 		s_ces[0].init("hello", 8, 16.0f, true, "iner1", MONSTER);
@@ -508,10 +507,10 @@ fn void Entity.deserialize_from_text(&entity, Parser* parser, Allocator alloc, S
 
 alias StackString = ElasticArray{char, 32};
 
-// Mark type to treat it as string, not array of bytes and format differently
-struct St (Printable) @tag(SCHEMA_FMT_TAG, SchemaFormatKind.STRING)
+struct St (Printable)
 {
-	StackString name;
+	// Mark member to treat it as string, not array of bytes and format differently
+	StackString name @tag(SCHEMA_FMT_TAG, SchemaFormatKind.STRING);
 	int         age;
 	float       money;
 	bool		is_married;
@@ -525,16 +524,10 @@ enum InnerType
 	GOBLIN
 }
 
-struct Inner (Printable) @tag(SCHEMA_FMT_TAG, SchemaFormatKind.STRING)
+struct Inner (Printable)
 {
-	StackString name;
+	StackString name @tag(SCHEMA_FMT_TAG, SchemaFormatKind.STRING);
 	InnerType 	type;
-}
-
-struct InnerSchema
-{
-	SchemaFormatKind 	name;
-	SchemaFormatKind	type;
 }
 
 fn void St.init(&new, char[5]* name, int age, float money, bool is_married = true, char[] inner_name = "inner1", InnerType inner_type = TROLL)
@@ -574,7 +567,7 @@ fn void Inner.print(&inner)
 
 struct Entity
 {
-	StackString name;
+	StackString name @tag(SCHEMA_FMT_TAG, SchemaFormatKind.STRING);
 	int         age;
 	double      money;
 	List{int}   textures;

@@ -28,7 +28,9 @@ enum SchemaFormatKind
 *>
 macro void Formatter.format_to_text(&f, val)
 {
-	return f.format_any(val);
+	var $ValType = $typeof(val);
+	SchemaFormatKind $root_fmt_kind = $ValType.has_tagof(SCHEMA_FMT_TAG) ??? $ValType.tagof(SCHEMA_FMT_TAG) : SchemaFormatKind.DEFAULT;
+	return f.format_any(val, $root_fmt_kind);
 }
 
 macro void Formatter.format_any(
@@ -54,10 +56,6 @@ macro void Formatter.format_any(
 		$kind = $Type.kindof;
 	$endif
 
-	$if $kind == STRUCT:
-		$fmt_kind = $Type.has_tagof(SCHEMA_FMT_TAG) ??? $Type.tagof(SCHEMA_FMT_TAG) : $fmt_kind;
-	$endif
-
 // Tag takes the priority over $curr_$fmt_kind
 	var dereffed_val = util::@deref_if_ptr(curr_val);
 
@@ -66,7 +64,12 @@ macro void Formatter.format_any(
 
  	$switch $kind:
 	$case DISTINCT:
-		f.format_any(dereffed_val, $fmt_kind, $indent_count, $top_level, true);
+		$switch $Type:
+		$case DString:
+			f.format_any(dereffed_val, SchemaFormatKind.STRING, $indent_count, $top_level, true);
+		$default:
+			f.format_any(dereffed_val, $fmt_kind, $indent_count, $top_level, true);
+		$endswitch
 	$case STRUCT:
 	$case BITSTRUCT:
 		$switch $Type:
@@ -149,26 +152,18 @@ macro void Formatter.format_struct(
         $endif
         $if $name != "":
             f.printf($inner_indent_s +++ "; %s\n", $name)!!;
-			var $MemType = $member.typeid;
-
-			SchemaFormatKind $next_fmt_kind = $fmt_kind;
-
-			$if $MemType.has_tagof(SCHEMA_FMT_TAG):
-				var $acquired_fmt_from_tag = $MemType.tagof(SCHEMA_FMT_TAG);
-				$if $acquired_fmt_from_tag != DEFAULT:
-					$next_fmt_kind = $acquired_fmt_from_tag;
-				$endif
-			$endif
+			var $mem_kind = $member.kindof;
+			$fmt_kind = $member.has_tagof(SCHEMA_FMT_TAG) ??? $member.tagof(SCHEMA_FMT_TAG) : $fmt_kind;
 
 			$switch:
 				// NOTE: ElasticArray special case
-			$case $defined(val.array_view()) && $MemType.kindof == ARRAY:
-				f.format_any(val.array_view(), $next_fmt_kind, $indent_count + 1, false, false);
+			$case $mem_kind == ARRAY && $defined(val.array_view()):
+				f.format_any(val.array_view(), $fmt_kind, $indent_count + 1, false, false);
 				// NOTE: DString special case
-			$case $defined(val.str_view()) && $MemType.kindof == ARRAY:
+			$case $mem_kind == ARRAY && $defined(val.str_view()):
 				f.format_any(val.str_view(), SchemaFormatKind.STRING, $indent_count + 1, false, false);
 			$default:
-				f.format_any(&val.$eval($name), $next_fmt_kind, $indent_count + 1, false, false);
+				f.format_any(&val.$eval($name), $fmt_kind, $indent_count + 1, false, false);
 			$endswitch
 		$endif
 	$endfor
@@ -292,14 +287,23 @@ macro void Formatter.format_vec(
 ) @private
 {
 	String $indent_str = @get_indent($indent_count);
+	String $vec_start = "[<";
+	String $vec_end = ">]";
 
 	$if $top_level:
-	    f.print("\n" +++ $indent_str)!!;
+	    f.print("\n" +++ $indent_str +++ $vec_start)!!;
 	$else
-	    f.print($indent_str)!!;
+	    f.print($indent_str +++ $vec_start)!!;
 	$endif
 
-	f.printf("%s", util::@deref_if_ptr(vec))!!;
+	foreach (uint i, item : util::@deref_if_ptr(vec)) {
+		f.printf("%s", item)!!;
+		if (i < vec.len - 1) {
+			f.print(", ")!!;
+		} else {
+			f.print($vec_end)!!;
+		}
+	}
 
 	$if $top_level:
 		f.print("\n")!!;

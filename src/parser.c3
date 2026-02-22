@@ -91,7 +91,9 @@ macro void Parser.parse_curr_value_and_skip_to_next(&parser, out_val, bool is_la
 *>
 macro void Parser.parse_recur_into(&parser, out_val)
 {
-	parser.parse_any(out_val, SchemaFormatKind.DEFAULT);
+	var $ValType = $typeof(out_val);
+	SchemaFormatKind $root_fmt_kind = $ValType.has_tagof(SCHEMA_FMT_TAG) ??? $ValType.tagof(SCHEMA_FMT_TAG) : SchemaFormatKind.DEFAULT;
+	parser.parse_any(out_val, $root_fmt_kind);
 }
 
 macro void Parser.parse_any(
@@ -120,10 +122,6 @@ macro void Parser.parse_any(
 		$fmt_kind = $Type.has_tagof(SCHEMA_FMT_TAG) ??? $Type.tagof(SCHEMA_FMT_TAG) : $fmt_kind;
 		$Type = $Type.inner;
 		$kind = $Type.kindof;
-	$endif
-
-	$if $kind == STRUCT:
-		$fmt_kind = $Type.has_tagof(SCHEMA_FMT_TAG) ??? $Type.tagof(SCHEMA_FMT_TAG) : $fmt_kind;
 	$endif
 
 // NOTE: DEBUG
@@ -207,34 +205,25 @@ macro void Parser.parse_struct(
 	$foreach $mem : $Type.membersof:
 		var $name = $mem.nameof;
 		$if $name.len:
-			var $MemType = $mem.typeid;
 			bool $is_distinct = $mem.kindof == DISTINCT;
-
-			SchemaFormatKind $next_fmt_kind = $fmt_kind;
-
-			$if $MemType.has_tagof(SCHEMA_FMT_TAG):
-				var $acquired_fmt_from_tag = $MemType.tagof(SCHEMA_FMT_TAG);
-				$if $acquired_fmt_from_tag != DEFAULT:
-					$next_fmt_kind = $acquired_fmt_from_tag;
-				$endif
-			$endif
+			$fmt_kind = $mem.has_tagof(SCHEMA_FMT_TAG) ??? $mem.tagof(SCHEMA_FMT_TAG) : $fmt_kind;
 
 			$if $is_distinct:
-				parser.parse_any(&out_value.$eval($name), $next_fmt_kind, true);
+				parser.parse_any(&out_value.$eval($name), $fmt_kind, true);
 			$else
 				$if $mem.kindof == ARRAY:
 					$switch:
 						// NOTE: ElasticArray special case
 					$case $defined(out_value.array_view()):
-						parser.parse_any(out_value.array_view(), $next_fmt_kind);
+						parser.parse_any(out_value.array_view(), $fmt_kind);
 						// NOTE: DString special case
 					$case $defined(out_value.str_view()):
 						parser.parse_any(out_value.str_view(), STRING);
 					$default:
-						parser.parse_any(out_value.$eval($name)[..], $next_fmt_kind);
+						parser.parse_any(out_value.$eval($name)[..], $fmt_kind);
 					$endswitch
 				$else
-					parser.parse_any(&out_value.$eval($name), $next_fmt_kind);
+					parser.parse_any(&out_value.$eval($name), $fmt_kind);
 				$endif
 			$endif
 		$endif

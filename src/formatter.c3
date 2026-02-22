@@ -56,7 +56,6 @@ macro void Formatter.format_any(
 		$kind = $Type.kindof;
 	$endif
 
-// Tag takes the priority over $curr_$fmt_kind
 	var dereffed_val = util::@deref_if_ptr(curr_val);
 
 // NOTE: DEBUG
@@ -255,7 +254,7 @@ macro void Formatter.format_string(
 	&f,
 	val,
 	char $indent_count = 0,
-	bool $top_level = true,
+	bool $top_level = false,
 ) @private
 {
 	String $indent_str = @get_indent($indent_count);
@@ -283,7 +282,7 @@ macro void Formatter.format_vec(
 	&f,
 	vec,
 	char $indent_count = 0,
-	bool $top_level = true,
+	bool $top_level = false,
 ) @private
 {
 	String $indent_str = @get_indent($indent_count);
@@ -318,7 +317,7 @@ macro void Formatter.format_mat(
 	&f,
 	mat,
 	char $indent_count = 0,
-	bool $top_level = true,
+	bool $top_level = false,
 ) @private
 {
 	String $base_indent_s = @get_indent($indent_count);

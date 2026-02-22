@@ -32,8 +32,8 @@ struct St
 	StackString name @tag(SCHEMA_FMT_TAG, SchemaFormatKind.STRING);
 	int         age;
 	float       money;
-	bool		    is_married;
-	Inner		    inner;
+	bool		is_married;
+	Inner		inner;
 }
 
 enum InnerType
@@ -101,8 +101,8 @@ fn void example_text_simple(Serializer* serializer, bool should_write)
 
 struct DiffFormat
 {
-	char[5] 	  str  @tag(SCHEMA_FMT_TAG, SchemaFormatKind.STRING);
-	char[5]		  def  @tag(SCHEMA_FMT_TAG, SchemaFormatKind.DEFAULT);
+	char[5] 	str  @tag(SCHEMA_FMT_TAG, SchemaFormatKind.STRING);
+	char[5]		def  @tag(SCHEMA_FMT_TAG, SchemaFormatKind.DEFAULT);
 	char[5]     vec  @tag(SCHEMA_FMT_TAG, SchemaFormatKind.VECTOR);
 	char[9]     mat  @tag(SCHEMA_FMT_TAG, SchemaFormatKind.MATRIX);
 }

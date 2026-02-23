@@ -56,7 +56,7 @@ macro void Formatter.format_any(
 		$kind = $Type.kindof;
 	$endif
 
-	var dereffed_val = util::@deref_if_ptr(curr_val);
+	var dereffed_val = deref_if_ptr(curr_val);
 
 // NOTE: DEBUG
 	// io::printfn("Formatter:\n\tdereffed value: %s\n\tkind: %s\n\tcurr_format: %s\n", dereffed_val, $kind, $fmt_kind);
@@ -121,7 +121,7 @@ macro void Formatter.format_any(
 
 <*
 	Introspect struct and print it to a formatter
-	@require util::@is_kindof_val(val, STRUCT, BITSTRUCT, DISTINCT, POINTER)
+	@require is_kindof_val(val, STRUCT, BITSTRUCT, DISTINCT, POINTER)
 		: "TypeKind should be one of: STRUCT, BITSTRUCT, DISTINCT, POINTER"
 *>
 macro void Formatter.format_struct(
@@ -134,7 +134,7 @@ macro void Formatter.format_struct(
 {
 	String $base_indent_s = @get_indent($indent_count);
 	String $inner_indent_s = $base_indent_s +++ INDENT_SYMBOL;
-	var $Type = util::@get_pointee_type_val(val);
+	var $Type = pointee_type_val(val);
 
 	$if $top_level:
 	    f.print("\n" +++ $base_indent_s +++ "{\n")!!;
@@ -176,7 +176,7 @@ macro void Formatter.format_struct(
 
 <*
 	Introspect array and print it to a formatter
-	@require util::@is_kindof_val(val, ARRAY, SLICE, DISTINCT, POINTER)
+	@require is_kindof_val(val, ARRAY, SLICE, DISTINCT, POINTER)
 		: "TypeKind should be one of: ARRAY, SLICE, DISTINCT, POINTER"
 *>
 macro void Formatter.format_array(
@@ -195,7 +195,7 @@ macro void Formatter.format_array(
 	    f.print($indent_str +++ "[\n")!!;
 	$endif
 
-	foreach (uint i, &member : util::@deref_if_ptr(val)) {
+	foreach (uint i, &member : deref_if_ptr(val)) {
 		if (i > 0) {
             f.print(",\n")!!;
 		}
@@ -246,9 +246,9 @@ macro void Formatter.format_primitive(
 
 <*
 	Introspect string and print it to a formatter
-	@require util::is_kindof($typeof(val), ARRAY, SLICE, DISTINCT, POINTER)
+	@require is_kindof_val(val, ARRAY, SLICE, DISTINCT, POINTER)
 		: "TypeKind should be one of: ARRAY, SLICE, DISTINCT, POINTER"
-	@require util::@get_innermost_type_val(val) == char : "Should be char as underlying type"
+	@require innermost_type_val(val) == char : "Should be char as underlying type"
 *>
 macro void Formatter.format_string(
 	&f,
@@ -265,7 +265,7 @@ macro void Formatter.format_string(
 	    f.print($indent_str +++ "\"")!!;
 	$endif
 
-	var dereffed_val = util::@deref_if_ptr(val);
+	var dereffed_val = deref_if_ptr(val);
 	f.printf("%s\"", (String)dereffed_val[:val.len])!!;
 
 	$if $top_level:
@@ -275,7 +275,7 @@ macro void Formatter.format_string(
 
 <*
 	Introspect vector and print it to a formatter
-	@require util::is_kindof($typeof(vec), VECTOR, SLICE, ARRAY, POINTER)
+	@require is_kindof_val(vec, VECTOR, SLICE, ARRAY, POINTER)
 		: "TypeKind should be VECTOR, SLICE, ARRAY, POINTER"
 *>
 macro void Formatter.format_vec(
@@ -295,7 +295,7 @@ macro void Formatter.format_vec(
 	    f.print($indent_str +++ $vec_start)!!;
 	$endif
 
-	foreach (uint i, item : util::@deref_if_ptr(vec)) {
+	foreach (uint i, item : deref_if_ptr(vec)) {
 		f.printf("%s", item)!!;
 		if (i < vec.len - 1) {
 			f.print(", ")!!;
@@ -311,7 +311,7 @@ macro void Formatter.format_vec(
 
 <*
 	Introspect matrix and print it to a formatter
-	@require util::is_kindof($typeof(mat), SLICE, ARRAY) : "TypeKind should be SLICE or ARRAY"
+	@require is_kindof_val(mat, SLICE, ARRAY) : "TypeKind should be SLICE or ARRAY"
 *>
 macro void Formatter.format_mat(
 	&f,

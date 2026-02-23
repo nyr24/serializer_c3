@@ -92,10 +92,10 @@ macro void Serializer.serialize_to_bin(
 	bool should_free_memory = false,
 )
 {
-	$if implements_serializable_to_bin(util::@get_pointee_type_val(val)):
+	$if implements_serializable_to_bin(pointee_type_val(val)):
        	val.serialize_to_bin(ser, alloc);
     $else
-		append_bin_data_to_buff(ser, util::to_byte_slice(val), alloc, should_free_memory);
+		append_bin_data_to_buff(ser, to_byte_slice(val), alloc, should_free_memory);
 	$endif
 }
 
@@ -147,7 +147,7 @@ fn void append_bin_data_to_buff_and_save_file(
 <*
 	This call will try to read existing data in current buffer
 	If you want to start reading from new file, you should explicitly call 'reset_state' on serializer object
-	@require util::is_kindof($typeof(val), POINTER, SLICE) : "Should be a pointer or slice"
+	@require is_kindof($typeof(val), POINTER, SLICE) : "Should be a pointer or slice"
 *>
 macro void Serializer.deserialize_from_bin(
 	&ser,
@@ -156,7 +156,7 @@ macro void Serializer.deserialize_from_bin(
 	String file_path,
 )
 {
-	$if implements_serializable_to_bin(util::@get_pointee_type_val(val)):
+	$if implements_serializable_to_bin(pointee_type_val(val)):
 		if (!ser.chunk_it.is_initialized()) {
 			usz contents_len = read_file_into_buffer(ser, BIN, file_path);
 			ser.chunk_it.init(&ser.buff, contents_len);
@@ -259,7 +259,7 @@ macro void Serializer.serialize_to_text(
 	usz assumed_serialized_data_size = 0,
 )
 {
-	$if implements_serializable_to_text(util::@get_pointee_type_val(val)):
+	$if implements_serializable_to_text(pointee_type_val(val)):
 		if (ser.buff.size == 0) {
 			write_file_header_to_buff(ser, 0, TEXT);
 		}
@@ -314,7 +314,7 @@ macro void append_text_data_to_buff(
 <*
 	This call will try to read existing data in current buffer
 	If you want to start reading from new file, you should explicitly call 'reset_state' on serializer object
-	@require util::is_kindof($typeof(val), POINTER, SLICE) : "Should be a pointer or slice"
+	@require is_kindof($typeof(val), POINTER, SLICE) : "Should be a pointer or slice"
 *>
 macro void Serializer.deserialize_from_text(
 	&ser,
@@ -327,7 +327,7 @@ macro void Serializer.deserialize_from_text(
 		read_file_into_buffer(ser, TEXT, file_path);
 	}
 
-	$if implements_serializable_to_text(util::@get_pointee_type_val(val)):
+	$if implements_serializable_to_text(pointee_type_val(val)):
 		val.deserialize_from_text(&ser.parser, alloc, file_path);
 	$else
 		ser.parser.parse_recur_into(val);
@@ -388,7 +388,7 @@ fn void write_file_header_to_buff(Serializer* ser, usz contents_len, Serializati
 	header.format_id = mode == BIN ? FILE_FORMAT_ID_BIN : FILE_FORMAT_ID_TXT;
 	header.contents_len = (uint)contents_len;
 	header.mode = (uint)mode;
-	char[] header_as_bytes = util::to_byte_slice(&header);
+	char[] header_as_bytes = to_byte_slice(&header);
 	ser.buff.push_all(header_as_bytes);
 }
 
@@ -402,7 +402,7 @@ fn usz write_chunk_header(Serializer* ser, usz chunk_size) @private
 	uint chunk_with_header_common_aligned_size = (uint)mem::aligned_offset(chunk_size + ChunkHeader.sizeof, ALIGNMENT);
 	header.aligned_size = chunk_with_header_common_aligned_size - ChunkHeader.sizeof;
 	header.padding = header.aligned_size - (uint)chunk_size;
-	char[] header_as_bytes = util::to_byte_slice(&header);
+	char[] header_as_bytes = to_byte_slice(&header);
 
 	ser.buff.push_all(header_as_bytes);
 

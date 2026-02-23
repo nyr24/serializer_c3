@@ -200,7 +200,7 @@ macro void Parser.parse_struct(
 	assert(!parser.is_at_end(), "Shouldn't be at the end here");
 
 	var $RootType = $typeof(out_value);
-	var $Type = util::@get_pointee_type_val(out_value);
+	var $Type = pointee_type_val(out_value);
 
 	$foreach $mem : $Type.membersof:
 		var $name = $mem.nameof;
@@ -233,7 +233,7 @@ macro void Parser.parse_struct(
 }
 
 <*
-	@require util::is_kindof($typeof(out_array), SLICE, POINTER, DISTINCT) : "Should be a slice or pointer to array"
+	@require is_kindof($typeof(out_array), SLICE, POINTER, DISTINCT) : "Should be a slice or pointer to array"
 	@require parser.curr_char() == TokenChar.ARRAY_START : "Should be at the start of array"
 *>
 macro void Parser.parse_array(
@@ -339,7 +339,7 @@ fn void Parser.parse_boolean(&parser, bool* out_bool)
 
 <*
 	@require $typeof(out_value).kindof == POINTER : "Should be a pointer"
-	@require util::is_kindof($typeof(out_value).inner, UNSIGNED_INT, SIGNED_INT, FLOAT) : "Should be of number type"
+	@require is_kindof($typeof(out_value).inner, UNSIGNED_INT, SIGNED_INT, FLOAT) : "Should be of number type"
 	@require parser.curr_char().is_digit() || is_digit_sign(parser.curr_char()) : "Character we currently on should be either a digit or a sign"
 *>
 macro void Parser.parse_number(&parser, out_value)
@@ -348,7 +348,7 @@ macro void Parser.parse_number(&parser, out_value)
 	parse_num_private(parser, &digit_buff);
 	char[] digit_as_chars = digit_buff.array_view();
 
-	var $Type = util::@get_pointee_type_val(out_value);
+	var $Type = pointee_type_val(out_value);
 	$switch $Type.sizeof:
 	$case char.sizeof:
 	$case short.sizeof:
@@ -379,7 +379,7 @@ macro void Parser.parse_const_enum(&parser, out_value)
 	parse_num_private(parser, &digit_buff);
 	char[] digit_as_chars = digit_buff.array_view();
 
-	var $EnumType = util::@get_pointee_type_val(out_value);
+	var $EnumType = pointee_type_val(out_value);
 	var $InnerType = $EnumType.inner;
 
 	$switch ($InnerType.sizeof):
@@ -404,7 +404,7 @@ macro void Parser.parse_plain_enum(&parser, out_value)
 	parse_num_private(parser, &digit_buff);
 	char[] digit_as_chars = digit_buff.array_view();
 
-	var $EnumType = util::@get_pointee_type_val(out_value);
+	var $EnumType = pointee_type_val(out_value);
 	var $OrdinalType = $EnumType.inner;
 
 	$switch ($OrdinalType.sizeof):

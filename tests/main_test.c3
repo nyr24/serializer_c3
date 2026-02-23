@@ -14,6 +14,7 @@ fn void main_test() @test
 	defer serializer.destroy();
 
 	const EXAMPLE_BIN_SIMPLE = true;
+	const EXAMPLE_BIN_SIMPLE_SINGLE = true;
 	const EXAMPLE_BIN_MATH = true;
 	const EXAMPLE_BIN_LIST = true;
 	const EXAMPLE_BIN_DSTRING = true;
@@ -31,6 +32,10 @@ fn void main_test() @test
 
 	if (EXAMPLE_BIN_SIMPLE) {
 		example_bin_simple(&serializer, SHOULD_WRITE);
+	}
+
+	if (EXAMPLE_BIN_SIMPLE_SINGLE) {
+		example_bin_simple_single(&serializer, SHOULD_WRITE);
 	}
 
 	if (EXAMPLE_BIN_MATH) {
@@ -89,9 +94,9 @@ fn void main_test() @test
 fn void example_bin_simple(Serializer* serializer, bool should_write)
 {
 	String f_name = ser::acquire_file_fmt_name("example.simple", BIN);
+	St[3] s_ces;
 
 	if (should_write) {
-		St[3] s_ces;
 		s_ces[0].init("sim_1", 8, 16.0f, true, "iner1", GOBLIN);
 		s_ces[1].init("sim_2", 16, 32.0f, false, "iner2", TROLL);
 		s_ces[2].init("sim_3", 32, 64.0f, false, "iner3", MONSTER);
@@ -99,14 +104,24 @@ fn void example_bin_simple(Serializer* serializer, bool should_write)
 		serializer.serialize_to_bin_and_save_to_file(util::to_byte_slice(s_ces[..]), mem, f_name);
 	}
 
-	char[] deser_slice = serializer.acquire_bin_data_from_file(mem, f_name);
-	defer allocator::free(mem, deser_slice.ptr);
-
-	St[] st_slice = util::from_byte_slice(deser_slice, St[]);
-
-	foreach (s : st_slice) {
+	serializer.deserialize_from_bin(s_ces[..], mem, f_name);
+	foreach (s : s_ces) {
 		s.print();
 	}
+}
+
+fn void example_bin_simple_single(Serializer* serializer, bool should_write)
+{
+	String f_name = ser::acquire_file_fmt_name("example.simple_single", BIN);
+	St st;
+
+	if (should_write) {
+		st.init("sim_1", 8, 16.0f, true, "iner1", GOBLIN);
+		serializer.serialize_to_bin_and_save_to_file(util::to_byte_slice(&st), mem, f_name);
+	}
+
+	serializer.deserialize_from_bin(&st, mem, f_name);
+	st.print();
 }
 
 fn void example_bin_math(Serializer* serializer, bool should_write)
@@ -115,7 +130,6 @@ fn void example_bin_math(Serializer* serializer, bool should_write)
 	String f_name = ser::acquire_file_fmt_name("example.math", BIN);
 	int[3] init_params = { 1, 2, 3 };
 
-// Slice
 	MathStruct[3] vals;
 	if (should_write) {
 		foreach (uint i, &v : vals) {
@@ -149,7 +163,6 @@ fn void example_bin_list(Serializer* serializer, bool should_write)
 	}
 
 	serializer.deserialize_from_bin(&l_ints, tmem, f_name);
-
 	io::printn(l_ints);
 }
 
@@ -459,7 +472,7 @@ fn void Entity.serialize_to_bin(&entity, Serializer* ser, Allocator alloc)
 	stack_p.money = entity.money;
 	char[] stack_p_slice = util::to_byte_slice(&stack_p);
 	
-	ser.append_bin_data_to_buff(stack_p_slice, alloc, false);
+	ser.serialize_to_bin(stack_p_slice, alloc, false);
 	ser.serialize_to_bin(&entity.textures, alloc);
 	ser.serialize_to_bin(&entity.job_name, alloc);
 	ser.serialize_to_bin(&entity.map, alloc);
@@ -481,7 +494,7 @@ fn void Entity.serialize_to_text(&entity, Serializer* ser, Allocator alloc)
 	stack_p.age = entity.age;
 	stack_p.money = entity.money;
 	
-	ser.append_text_data_to_buff(&stack_p, alloc, false);
+	ser.serialize_to_text(&stack_p, alloc, false);
 	ser.serialize_to_text(&entity.textures, alloc, false, entity.textures.byte_size());
 	ser.serialize_to_text(&entity.job_name, alloc, false, entity.job_name.capacity() * char.sizeof);
 	ser.serialize_to_text(&entity.map, alloc, false, entity.map.threshold * $sizeof(*entity.map.table[0]));

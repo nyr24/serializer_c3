@@ -54,9 +54,9 @@ struct Inner
 fn void example_bin_simple(Serializer* serializer, bool should_write)
 {
 	String f_name = ser::acquire_file_fmt_name("example.simple", BIN);
+	St[3] s_ces;
 
 	if (should_write) {
-		St[3] s_ces;
 		s_ces[0].init("sim_1", 8, 16.0f, true, "iner1", GOBLIN);
 		s_ces[1].init("sim_2", 16, 32.0f, false, "iner2", TROLL);
 		s_ces[2].init("sim_3", 32, 64.0f, false, "iner3", MONSTER);
@@ -64,12 +64,8 @@ fn void example_bin_simple(Serializer* serializer, bool should_write)
 		serializer.serialize_to_bin_and_save_to_file(util::to_byte_slice(s_ces[..]), mem, f_name);
 	}
 
-	char[] deser_slice = serializer.acquire_bin_data_from_file(mem, f_name);
-	defer allocator::free(mem, deser_slice.ptr);
-
-	St[] st_slice = util::from_byte_slice(deser_slice, St[]);
-
-	foreach (s : st_slice) {
+	serializer.deserialize_from_bin(s_ces[..], mem, f_name);
+	foreach (s : s_ces) {
 		s.print();
 	}
 }
@@ -80,8 +76,8 @@ fn void example_text_simple(Serializer* serializer, bool should_write)
 {
 	serializer.reset_state();
 	String f_name = ser::acquire_file_fmt_name("example.simple", TEXT);
-
 	St[3] s_ces;
+
 	if (should_write) {
 		s_ces[0].init("hello", 8, 16.0f, true, "iner1", MONSTER);
 		s_ces[1].init("world", 16, 32.0f, false, "iner2", TROLL);
@@ -91,7 +87,6 @@ fn void example_text_simple(Serializer* serializer, bool should_write)
 	}
 
 	serializer.deserialize_from_text(s_ces[..], tmem, f_name);
-
 	foreach (s : s_ces[..]) {
 		s.print();
 	}
@@ -150,7 +145,7 @@ fn void Entity.serialize_to_bin(&entity, Serializer* ser, Allocator alloc)
 	stack_p.money = entity.money;
 	char[] stack_p_slice = util::to_byte_slice(&stack_p);
 	
-	ser.append_bin_data_to_buff(stack_p_slice, alloc, false);
+	ser.serialize_to_bin(stack_p_slice, alloc, false);
 	ser.serialize_to_bin(&entity.textures, alloc);
 	ser.serialize_to_bin(&entity.job_name, alloc);
 	ser.serialize_to_bin(&entity.map, alloc);
@@ -172,7 +167,7 @@ fn void Entity.serialize_to_text(&entity, Serializer* ser, Allocator alloc)
 	stack_p.age = entity.age;
 	stack_p.money = entity.money;
 	
-	ser.append_text_data_to_buff(&stack_p, alloc, false);
+	ser.serialize_to_text(&stack_p, alloc, false);
 	ser.serialize_to_text(&entity.textures, alloc, false, entity.textures.byte_size());
 	ser.serialize_to_text(&entity.job_name, alloc, false, entity.job_name.capacity() * char.sizeof);
 	ser.serialize_to_text(&entity.map, alloc, false, entity.map.threshold * $sizeof(*entity.map.table[0]));

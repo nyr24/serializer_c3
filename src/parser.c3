@@ -240,7 +240,7 @@ macro void Parser.parse_array(
 	&parser,
 	out_array,
 	SchemaFormatKind $fmt_kind = DEFAULT,
-) @local
+)
 {
 	parser.step();
 	assert(!parser.is_at_end(), "Shouldn't be at the end here");
@@ -345,7 +345,7 @@ fn void Parser.parse_boolean(&parser, bool* out_bool)
 macro void Parser.parse_number(&parser, out_value)
 {
 	ElasticArray{char, MAX_DIGIT_LEN} digit_buff;
-	parser.parse_num_private(&digit_buff);
+	parse_num_private(parser, &digit_buff);
 	char[] digit_as_chars = digit_buff.array_view();
 
 	var $Type = util::@get_pointee_type_val(out_value);
@@ -376,7 +376,7 @@ macro void Parser.parse_number(&parser, out_value)
 macro void Parser.parse_const_enum(&parser, out_value)
 {
 	ElasticArray{char, MAX_DIGIT_LEN} digit_buff;
-	parser.parse_num_private(&digit_buff);
+	parse_num_private(parser, &digit_buff);
 	char[] digit_as_chars = digit_buff.array_view();
 
 	var $EnumType = util::@get_pointee_type_val(out_value);
@@ -401,7 +401,7 @@ macro void Parser.parse_const_enum(&parser, out_value)
 macro void Parser.parse_plain_enum(&parser, out_value)
 {
 	ElasticArray{char, MAX_DIGIT_LEN} digit_buff;
-	parser.parse_num_private(&digit_buff);
+	parse_num_private(parser, &digit_buff);
 	char[] digit_as_chars = digit_buff.array_view();
 
 	var $EnumType = util::@get_pointee_type_val(out_value);
@@ -445,7 +445,7 @@ fn char[] Parser.read_comment(&parser, CommentString* out_comment_value)
 	return value;
 }
 
-fn void Parser.parse_num_private(&parser, ElasticArray{char, MAX_DIGIT_LEN}* digit_buff) @local
+fn void parse_num_private(Parser* parser, ElasticArray{char, MAX_DIGIT_LEN}* digit_buff) @local
 {
 	usz start = parser.curr;
 	bool is_digit = false;

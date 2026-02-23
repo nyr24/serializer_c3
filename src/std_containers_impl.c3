@@ -39,7 +39,7 @@ fn void List.serialize_to_bin(&list, Serializer* ser, Allocator alloc)
 	if (ser_repr.size > 0) {
 		mem::copy(&ser_repr.entries, list.entries, entries_byte_size);
 	}
-	ser.append_bin_data_to_buff(ser_repr_as_bytes, alloc, true);
+	ser.serialize_to_bin(ser_repr_as_bytes, alloc, true);
 }
 
 fn void List.deserialize_from_bin(&list, ChunkIterator* chunk_it, Allocator alloc)
@@ -65,7 +65,7 @@ fn void List.serialize_to_text(&list, Serializer* ser, Allocator alloc)
 		ser_repr.entries = allocator::alloc_array(alloc, Type, list.size);
 		mem::copy(ser_repr.entries.ptr, list.entries, list.size * Type.sizeof);
 	}
-	ser.append_text_data_to_buff(ser_repr, alloc, true, ListSerializedText.sizeof + list.size * Type.sizeof);
+	ser.serialize_to_text(ser_repr, alloc, true, ListSerializedText.sizeof + list.size * Type.sizeof);
 }
 
 <*
@@ -126,7 +126,7 @@ fn void DString.serialize_to_bin(&dstring, Serializer* ser, Allocator alloc)
 	if (ser_repr.len > 0) {
 		mem::copy(&ser_repr.chars, &str_data.chars, str_data.len);
 	}
-	ser.append_bin_data_to_buff(ser_repr_as_bytes, alloc, true);
+	ser.serialize_to_bin(ser_repr_as_bytes, alloc, true);
 }
 
 fn void DString.deserialize_from_bin(&dstring, ChunkIterator* chunk_it, Allocator alloc)
@@ -153,7 +153,7 @@ fn void DString.serialize_to_text(&dstring, Serializer* ser, Allocator alloc)
 	if (ser_repr.len > 0) {
 		mem::copy(ser_repr.chars.ptr, &str_data.chars, str_data.len);
 	}
-	ser.append_text_data_to_buff(ser_repr, alloc, true, DStringSerializedText.sizeof + str_data.len * char.sizeof);
+	ser.serialize_to_text(ser_repr, alloc, true, DStringSerializedText.sizeof + str_data.len * char.sizeof);
 }
 
 <*
@@ -215,10 +215,10 @@ fn void HashMap.serialize_to_bin(&map, Serializer* ser, Allocator alloc)
 	ser_map.count = map.count;
 	ser_map.threshold = map.threshold;
 	ser_map.load_factor = map.load_factor;
-	ser.append_bin_data_to_buff(util::to_byte_slice(&ser_map), alloc, false);
+	ser.serialize_to_bin(util::to_byte_slice(&ser_map), alloc, false);
 	if (ser_map.count > 0) {
-		ser.append_bin_data_to_buff(util::to_byte_slice(keys), alloc, true);
-		ser.append_bin_data_to_buff(util::to_byte_slice(values), alloc, true);
+		ser.serialize_to_bin(util::to_byte_slice(keys), alloc, true);
+		ser.serialize_to_bin(util::to_byte_slice(values), alloc, true);
 	}
 }
 
@@ -250,7 +250,7 @@ fn void HashMap.serialize_to_text(&map, Serializer* ser, Allocator alloc)
 		ser_map.keys = map.keys(alloc);
 		ser_map.values = map.values(alloc);
 	}
-	ser.append_text_data_to_buff(ser_map, alloc, true, HashMapSerializedText.sizeof + $sizeof(*map.table[0]) * map.count);
+	ser.serialize_to_text(ser_map, alloc, true, HashMapSerializedText.sizeof + $sizeof(*map.table[0]) * map.count);
 }
 
 <*

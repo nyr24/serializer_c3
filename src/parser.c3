@@ -34,7 +34,8 @@ struct Parser
 	usz	      curr_line;
 }
 
-enum TokenChar : const inline char
+constdef TokenChar : inline char
+// enum TokenChar : const inline char
 {
 	ARRAY_START 	= '[',
 	ARRAY_END   	= ']',
@@ -50,7 +51,8 @@ enum TokenChar : const inline char
 	COMMA			= ',',
 }
 
-enum BoolAsString : const inline char[]
+constdef BoolAsString : String
+// enum BoolAsString : const String
 {
 	TRUE  = "true",
 	FALSE = "false",
@@ -371,7 +373,7 @@ macro void Parser.parse_number(&parser, out_value)
 
 <*
 	@require $typeof(out_value).kindof == POINTER : "Should be a pointer"
-	@require parser.curr_char().is_digit() : "Character we currently on should be either a digit or a sign"
+	@require parser.curr_char().is_digit() || is_digit_sign(parser.curr_char()) : "Character we currently on should be either a digit or a sign"
 *>
 macro void Parser.parse_const_enum(&parser, out_value)
 {

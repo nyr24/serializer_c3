@@ -180,7 +180,7 @@ macro void Serializer.deserialize_from_bin(
 
 	Caller must free the memory
 *>
-fn char[] Serializer.acquire_bin_data_from_file(&ser, Allocator alloc, String file_path) @private
+fn char[] Serializer.acquire_bin_data_from_file(&ser, Allocator alloc, String file_path)
 {
 	usz contents_len = read_file_into_buffer(ser, BIN, file_path);
 	char[] buff_view = ser.buff.view_range_len(FileHeader.sizeof + ChunkHeader.sizeof, contents_len - ChunkHeader.sizeof);
@@ -197,7 +197,7 @@ fn ChunkIterator* Serializer.acquire_bin_data_from_file_as_chunks(&ser, Allocato
 	return &ser.chunk_it;
 }
 
-fn void Serializer.write_serialized_chunk_to_buff(&ser, char[] serialized_chunk) @private
+fn void Serializer.write_serialized_chunk_to_buff(&ser, char[] serialized_chunk)
 {
 	usz padding = write_chunk_header(ser, serialized_chunk.len);
 	ser.buff.push_all(serialized_chunk);
@@ -240,7 +240,7 @@ fn char[] ChunkIterator.next(&chunk_it)
 <*
 	@param [out] out_header
 *>
-fn void ChunkIterator.read_chunk_header_and_move_offset(&it, ChunkHeader* out_header) @private
+fn void ChunkIterator.read_chunk_header_and_move_offset(&it, ChunkHeader* out_header)
 {
 
 	ChunkHeader* header = (ChunkHeader*)(it.buff_view.ptr + it.offset);

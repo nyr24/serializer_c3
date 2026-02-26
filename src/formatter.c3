@@ -50,27 +50,32 @@ macro void Formatter.format_any(
 		$kind = $Type.kindof;
 	$endif
 
-	$if $unwrap_distinct && $kind == DISTINCT:
-		$fmt_kind = $Type.has_tagof(SCHEMA_FMT_TAG) ??? $Type.tagof(SCHEMA_FMT_TAG) : $fmt_kind;
-		$Type = $Type.inner;
-		$kind = $Type.kindof;
+	$if $unwrap_distinct:
+		$switch ($kind):
+		$case TYPEDEF:
+		$case CONSTDEF:
+		$case BITSTRUCT:
+			$fmt_kind = $Type.has_tagof(SCHEMA_FMT_TAG) ??? $Type.tagof(SCHEMA_FMT_TAG) : $fmt_kind;
+			$Type = $Type.inner;
+			$kind = $Type.kindof;
+		$endswitch
 	$endif
 
+// NOTE: DEBUG
+	// io::printfn("Formatter:\n\value: %s\n\tkind: %s\n\tcurr_format: %s\n", curr_val, $kind, $fmt_kind);
 	var dereffed_val = deref_if_ptr(curr_val);
 
-// NOTE: DEBUG
-	// io::printfn("Formatter:\n\tdereffed value: %s\n\tkind: %s\n\tcurr_format: %s\n", dereffed_val, $kind, $fmt_kind);
-
- 	$switch $kind:
-	$case DISTINCT:
-		$switch $Type:
+ 	$switch ($kind):
+	$case TYPEDEF:
+	$case CONSTDEF:
+	$case BITSTRUCT:
+		$switch ($Type):
 		$case DString:
 			f.format_any(dereffed_val, SchemaFormatKind.STRING, $indent_count, $top_level, true);
 		$default:
 			f.format_any(dereffed_val, $fmt_kind, $indent_count, $top_level, true);
 		$endswitch
 	$case STRUCT:
-	$case BITSTRUCT:
 		$switch $Type:
 		$case Matrix2x2{float}:
 		$case Matrix3x3{float}:
@@ -78,20 +83,20 @@ macro void Formatter.format_any(
 		$case Matrix2x2{double}:
 		$case Matrix3x3{double}:
 		$case Matrix4x4{double}:
-			f.format_mat(dereffed_val.m[:curr_val.m.len], $indent_count, $top_level);
+			f.format_mat(dereffed_val.m[:dereffed_val.m.len], $indent_count, $top_level);
 		$default:
 			f.format_struct(dereffed_val, $fmt_kind, $indent_count, $top_level);
 		$endswitch
 	$case ARRAY:
 		$switch ($fmt_kind):
 		$case SchemaFormatKind.STRING:
-			f.format_string(dereffed_val[:curr_val.len], $indent_count, $top_level);
+			f.format_string(dereffed_val[:dereffed_val.len], $indent_count, $top_level);
 		$case SchemaFormatKind.VECTOR:
-			f.format_vec(dereffed_val[:curr_val.len], $indent_count, $top_level);
+			f.format_vec(dereffed_val[:dereffed_val.len], $indent_count, $top_level);
 		$case SchemaFormatKind.MATRIX:
-			f.format_mat(dereffed_val[:curr_val.len], $indent_count, $top_level);
+			f.format_mat(dereffed_val[:dereffed_val.len], $indent_count, $top_level);
 		$default:
-			f.format_array(dereffed_val[:curr_val.len], $fmt_kind, $indent_count, $top_level);
+			f.format_array(dereffed_val[:dereffed_val.len], $fmt_kind, $indent_count, $top_level);
 		$endswitch
 	$case SLICE:
 		$switch ($fmt_kind):
@@ -112,7 +117,6 @@ macro void Formatter.format_any(
 	$case FLOAT:
 	$case TYPEID:
 	$case ENUM:
-	$case CONST_ENUM:
 		f.format_primitive(dereffed_val, $kind, $indent_count, $top_level);
 	$default:
 		unreachable("Type kind is not supported for formatting: %s", $kind);
@@ -121,8 +125,8 @@ macro void Formatter.format_any(
 
 <*
 	Introspect struct and print it to a formatter
-	@require is_kindof_val(val, STRUCT, BITSTRUCT, DISTINCT, POINTER)
-		: "TypeKind should be one of: STRUCT, BITSTRUCT, DISTINCT, POINTER"
+	@require is_kindof_val(val, STRUCT, TYPEDEF, POINTER)
+		: "TypeKind should be one of: STRUCT, TYPEDEF, POINTER"
 *>
 macro void Formatter.format_struct(
 	&f,
@@ -162,7 +166,7 @@ macro void Formatter.format_struct(
 			$case $mem_kind == ARRAY && $defined(val.str_view()):
 				f.format_any(val.str_view(), SchemaFormatKind.STRING, $indent_count + 1, false, false);
 			$default:
-				f.format_any(&val.$eval($name), $fmt_kind, $indent_count + 1, false, false);
+				f.format_any(val.$eval($name), $fmt_kind, $indent_count + 1, false, false);
 			$endswitch
 		$endif
 	$endfor
@@ -176,8 +180,8 @@ macro void Formatter.format_struct(
 
 <*
 	Introspect array and print it to a formatter
-	@require is_kindof_val(val, ARRAY, SLICE, DISTINCT, POINTER)
-		: "TypeKind should be one of: ARRAY, SLICE, DISTINCT, POINTER"
+	@require is_kindof_val(val, ARRAY, SLICE, TYPEDEF, POINTER)
+		: "TypeKind should be one of: ARRAY, SLICE, TYPEDEF, POINTER"
 *>
 macro void Formatter.format_array(
 	&f,
@@ -195,7 +199,7 @@ macro void Formatter.format_array(
 	    f.print($indent_str +++ "[\n")!!;
 	$endif
 
-	foreach (uint i, &member : deref_if_ptr(val)) {
+	foreach (uint i, member : val) {
 		if (i > 0) {
             f.print(",\n")!!;
 		}
@@ -235,8 +239,6 @@ macro void Formatter.format_primitive(
 		f.printf($indent_str +++ "%s", val)!!;
 	$case ENUM:
 		f.printf($indent_str +++ "%d", val.ordinal)!!;
-	$case CONST_ENUM:
-		f.printf($indent_str +++ "%d", val)!!;
 	$endswitch
 
 	$if $top_level:
@@ -246,8 +248,8 @@ macro void Formatter.format_primitive(
 
 <*
 	Introspect string and print it to a formatter
-	@require is_kindof_val(val, ARRAY, SLICE, DISTINCT, POINTER)
-		: "TypeKind should be one of: ARRAY, SLICE, DISTINCT, POINTER"
+	@require is_kindof_val(val, ARRAY, SLICE, TYPEDEF, POINTER)
+		: "TypeKind should be one of: ARRAY, SLICE, TYPEDEF, POINTER"
 	@require innermost_type_val(val) == char : "Should be char as underlying type"
 *>
 macro void Formatter.format_string(

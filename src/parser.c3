@@ -103,12 +103,13 @@ macro void Parser.parse_any(
 	bool $unwrap_distinct = false,
 )
 {
-	parser.skip_ws();
-
-	if (parser.curr_char() == TokenChar.COMMENT) {
-		parser.skip_line();
+	$if !$unwrap_distinct:
 		parser.skip_ws();
-	}
+		if (parser.curr_char() == TokenChar.COMMENT) {
+			parser.skip_line();
+			parser.skip_ws();
+		}
+	$endif
 
 	var $Type = $typeof(curr_val);
 	var $kind = $Type.kindof;
@@ -118,20 +119,26 @@ macro void Parser.parse_any(
 		$kind = $Type.kindof;
 	$endif
 
-	$if $unwrap_distinct && $kind == DISTINCT:
-		$fmt_kind = $Type.has_tagof(SCHEMA_FMT_TAG) ??? $Type.tagof(SCHEMA_FMT_TAG) : $fmt_kind;
-		$Type = $Type.inner;
-		$kind = $Type.kindof;
+	$if $unwrap_distinct:
+		$switch ($kind):
+		$case TYPEDEF:
+		$case CONSTDEF:
+		$case BITSTRUCT:
+			$fmt_kind = $Type.has_tagof(SCHEMA_FMT_TAG) ??? $Type.tagof(SCHEMA_FMT_TAG) : $fmt_kind;
+			$Type = $Type.inner;
+			$kind = $Type.kindof;
+		$endswitch
 	$endif
 
 // NOTE: DEBUG
 	// io::printfn("Parser: curr char: %c, index: %d remain_distance: %d kind: %s, $unwrap_dist: %s", parser.curr_char(), parser.curr, parser.end - parser.curr, $kind, $unwrap_distinct);
 
 	$switch ($kind):
-	$case DISTINCT:
+	$case TYPEDEF:
+	$case CONSTDEF:
+	$case BITSTRUCT:
 		parser.parse_any(curr_val, $fmt_kind, true);
 	$case STRUCT:
-	$case BITSTRUCT:
 		$switch $Type:
 		$case Matrix2x2{float}:
 		$case Matrix3x3{float}:
@@ -174,9 +181,7 @@ macro void Parser.parse_any(
 	$case BOOL:
 		parser.parse_boolean(curr_val);
 	$case ENUM:
-		parser.parse_plain_enum(curr_val);
-	$case CONST_ENUM:
-		parser.parse_const_enum(curr_val);
+		parser.parse_enum(curr_val);
 	$default:
 		unreachable("Unsupported type for parsing: %s, value: %s", $Type, curr_val);
 	$endswitch
@@ -205,7 +210,7 @@ macro void Parser.parse_struct(
 	$foreach $mem : $Type.membersof:
 		var $name = $mem.nameof;
 		$if $name.len:
-			bool $is_distinct = $mem.kindof == DISTINCT;
+			bool $is_distinct = $mem.kindof == TYPEDEF;
 			$fmt_kind = $mem.has_tagof(SCHEMA_FMT_TAG) ??? $mem.tagof(SCHEMA_FMT_TAG) : $fmt_kind;
 
 			$if $is_distinct:
@@ -233,7 +238,7 @@ macro void Parser.parse_struct(
 }
 
 <*
-	@require is_kindof($typeof(out_array), SLICE, POINTER, DISTINCT) : "Should be a slice or pointer to array"
+	@require is_kindof($typeof(out_array), SLICE, POINTER, TYPEDEF) : "Should be a slice or pointer to array"
 	@require parser.curr_char() == TokenChar.ARRAY_START : "Should be at the start of array"
 *>
 macro void Parser.parse_array(
@@ -373,32 +378,7 @@ macro void Parser.parse_number(&parser, out_value)
 	@require $typeof(out_value).kindof == POINTER : "Should be a pointer"
 	@require parser.curr_char().is_digit() : "Character we currently on should be either a digit or a sign"
 *>
-macro void Parser.parse_const_enum(&parser, out_value)
-{
-	ElasticArray{char, MAX_DIGIT_LEN} digit_buff;
-	parse_num_private(parser, &digit_buff);
-	char[] digit_as_chars = digit_buff.array_view();
-
-	var $EnumType = pointee_type_val(out_value);
-	var $InnerType = $EnumType.inner;
-
-	$switch ($InnerType.sizeof):
-	$case char.sizeof:
-	$case short.sizeof:
-	$case int.sizeof:
-		*out_value = ($EnumType)libc::atoi(digit_as_chars);
-	$case long.sizeof:
-		*out_value = ($EnumType)libc::atoll(digit_as_chars);
-	$default:
-		unreachable("Unknown size of type of const enum: %d", $InnerType.sizeof);
-	$endswitch
-}
-
-<*
-	@require $typeof(out_value).kindof == POINTER : "Should be a pointer"
-	@require parser.curr_char().is_digit() : "Character we currently on should be either a digit or a sign"
-*>
-macro void Parser.parse_plain_enum(&parser, out_value)
+macro void Parser.parse_enum(&parser, out_value)
 {
 	ElasticArray{char, MAX_DIGIT_LEN} digit_buff;
 	parse_num_private(parser, &digit_buff);
@@ -485,7 +465,7 @@ fn void Parser.skip_until_array_end(&parser)
 <*
 	Returns true if end reached
 *>
-fn bool Parser.skip_ws(&parser) @private
+fn bool Parser.skip_ws(&parser)
 {
 	while (parser.curr < parser.end)
 	{
@@ -504,7 +484,7 @@ fn bool Parser.skip_ws(&parser) @private
 <*
 	Returns true if end reached
 *>
-fn bool Parser.skip_ws_or_comma(&parser) @private
+fn bool Parser.skip_ws_or_comma(&parser)
 {
 	while (parser.curr < parser.end)
 	{
@@ -520,20 +500,20 @@ fn bool Parser.skip_ws_or_comma(&parser) @private
 	return true;
 }
 
-fn bool Parser.skip_line(&parser) @private
+fn bool Parser.skip_line(&parser)
 {
 	parser.skip_until_after_curr_char('\n');
 	return parser.is_at_end();
 }
 
-fn char[] Parser.read_until_value_end(&parser) @private
+fn char[] Parser.read_until_value_end(&parser)
 {
 	usz start = parser.curr;
 	parser.skip_until_curr_char_cb(&is_space_or_comma);
 	return parser.buff_view[start : parser.curr - start];
 }
 
-fn bool Parser.skip_until_next_value_start(&parser) @private
+fn bool Parser.skip_until_next_value_start(&parser)
 {
 	if (parser.curr < parser.end) {
 		char c = parser.curr_char();
@@ -549,7 +529,7 @@ fn bool Parser.skip_until_next_value_start(&parser) @private
 	return parser.is_at_end();
 }
 
-fn char[] Parser.read_until_curr_char(&parser, char c) @private
+fn char[] Parser.read_until_curr_char(&parser, char c)
 {
 	usz start = parser.curr;
 	while (parser.curr < parser.end && parser.curr_char() != c)
@@ -559,7 +539,7 @@ fn char[] Parser.read_until_curr_char(&parser, char c) @private
 	return parser.buff_view[start : parser.curr - start];
 }
 
-fn void Parser.skip_until_curr_char(&parser, char c) @private
+fn void Parser.skip_until_curr_char(&parser, char c)
 {
 	while (parser.curr < parser.end && parser.curr_char() != c)
 	{
@@ -567,7 +547,7 @@ fn void Parser.skip_until_curr_char(&parser, char c) @private
 	}
 }
 
-fn void Parser.skip_until_next_char(&parser, char c) @private
+fn void Parser.skip_until_next_char(&parser, char c)
 {
 	while (parser.curr < parser.end && parser.next_char() != c)
 	{
@@ -575,7 +555,7 @@ fn void Parser.skip_until_next_char(&parser, char c) @private
 	}
 }
 
-fn void Parser.skip_until_after_curr_char(&parser, char c) @private
+fn void Parser.skip_until_after_curr_char(&parser, char c)
 {
 	while (parser.curr < parser.end && parser.curr_char() != c)
 	{
@@ -586,7 +566,7 @@ fn void Parser.skip_until_after_curr_char(&parser, char c) @private
 	}
 }
 
-fn void Parser.skip_until_curr_char_cb(&parser, SkipCallback cb) @private
+fn void Parser.skip_until_curr_char_cb(&parser, SkipCallback cb)
 {
 	while (parser.curr < parser.end && !cb(parser.curr_char()))
 	{
@@ -594,7 +574,7 @@ fn void Parser.skip_until_curr_char_cb(&parser, SkipCallback cb) @private
 	}
 }
 
-fn char[] Parser.read_until_curr_char_cb(&parser, SkipCallback cb) @private
+fn char[] Parser.read_until_curr_char_cb(&parser, SkipCallback cb)
 {
 	usz start = parser.curr;
 	while (parser.curr < parser.end && !cb(parser.curr_char()))
@@ -604,7 +584,7 @@ fn char[] Parser.read_until_curr_char_cb(&parser, SkipCallback cb) @private
 	return parser.buff_view[start : parser.curr - start];
 }
 
-fn char[] Parser.read_while_curr_char_cb(&parser, SkipCallback cb) @private
+fn char[] Parser.read_while_curr_char_cb(&parser, SkipCallback cb)
 {
 	usz start = parser.curr;
 	while (parser.curr < parser.end && cb(parser.curr_char()))
@@ -620,22 +600,17 @@ fn void Parser.debug_view(&parser, usz len = 50) @if(env::COMPILER_OPT_LEVEL.ord
 	io::printfn("Parser: closest values in buffer:\n\t%s", (String)parser.buff_view[parser.curr:len]);
 }
 
-fn char Parser.curr_char(&parser) @private @inline
+fn char Parser.curr_char(&parser) @inline
 {
 	return parser.buff_view[parser.curr];
 }
 
-fn char Parser.next_char(&parser, uint offset = 0) @private @inline
+fn char Parser.next_char(&parser, uint offset = 0)
 {
 	return parser.buff_view[parser.curr + 1 + offset];
 }
 
-fn char Parser.curr_char_and_next(&parser) @private @inline
-{
-	return parser.buff_view[parser.curr++];
-}
-
-fn void Parser.step(&parser) @private @inline
+fn void Parser.step(&parser) @inline
 {
 	parser.curr++;
 }
@@ -643,22 +618,22 @@ fn void Parser.step(&parser) @private @inline
 <*
 	@require count <= (parser.end - parser.curr) : "Shouldn't exceed bounds"
 *>
-fn void Parser.step_n(&parser, uint count) @private @inline
+fn void Parser.step_n(&parser, uint count) @inline
 {
 	parser.curr += count;
 }
 
-fn usz Parser.remain_dist(&parser) @private @inline
+fn usz Parser.remain_dist(&parser) @inline
 {
 	return parser.end - parser.curr;
 }
 
-fn bool Parser.is_at_end(&parser) @private @inline
+fn bool Parser.is_at_end(&parser) @inline
 {
 	return parser.curr == parser.end;
 }
 
-fn bool is_space_or_comma(char c)
+fn bool is_space_or_comma(char c) @private
 {
 	return ascii::is_space(c) || c == ',';
 }
@@ -668,7 +643,7 @@ fn bool is_in_charset(char c, char[] charset) @private
 	return array::contains(charset, c);
 }
 
-fn bool is_digit_sign(char c) @private
+fn bool is_digit_sign(char c) @private @inline
 {
 	return c == '-' || c == '+';
 }

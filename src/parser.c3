@@ -597,7 +597,7 @@ fn char[] Parser.read_while_curr_char_cb(&parser, SkipCallback cb)
 fn void Parser.debug_view(&parser, usz len = 50) @if(env::COMPILER_OPT_LEVEL.ordinal == 0)
 {
 	len = math::min(len, (usz)(parser.end - parser.curr + 1));
-	io::printfn("Parser: closest values in buffer:\n\t%s", (String)parser.buff_view[parser.curr:len]);
+	io::printfn("Parser: closest values in buffer:\n%s", (String)parser.buff_view[parser.curr:len]);
 }
 
 fn char Parser.curr_char(&parser) @inline

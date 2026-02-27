@@ -62,6 +62,7 @@ macro void List.serialize_to_text(&list, Serializer* ser, Allocator alloc)
 	ser_repr.size = list.size;
 	ser_repr.capacity = list.capacity;
 	ser.serialize_to_text(ser_repr, alloc, false, ListSerializedText.sizeof);
+
 	if (list.size > 0) {
 		$ItemType[] entries = allocator::alloc_array(alloc, $ItemType, list.size);
 		mem::copy(entries.ptr, list.entries, list.size * $ItemType.sizeof);
@@ -82,11 +83,14 @@ macro void List.deserialize_from_text(&list, Parser* parser, Allocator alloc, St
 	parser.parse_number(&list.capacity);
 	parser.skip_until_next_value_start();
 	parser.skip_until_struct_end();
-	$ItemType[] entries = allocator::alloc_array(alloc, $ItemType, list.capacity);
-	parser.parse_array(entries[:list.size]);
-	list.entries = entries.ptr;
-	list.allocator = alloc;
-	parser.skip_until_array_end();
+
+	if (list.size > 0) {
+		parser.skip_until_next_value_start();
+		$ItemType[] entries = allocator::alloc_array(alloc, $ItemType, list.capacity);
+		parser.parse_array(entries[:list.size]);
+		list.entries = entries.ptr;
+		list.allocator = alloc;
+	}
 }
 
 // ---- DString ----
@@ -265,7 +269,7 @@ macro void HashMap.deserialize_from_text(&map, Parser* parser, Allocator alloc, 
 	parser.parse_number(&map.threshold);
 	parser.skip_until_next_value_start();
 	parser.parse_number(&map.load_factor);
-
+	parser.skip_until_struct_end();
 	map.allocator = alloc;
 	map.table = allocator::new_array(alloc, void*, (usz)(map.threshold / map.load_factor));
 
@@ -282,5 +286,4 @@ macro void HashMap.deserialize_from_text(&map, Parser* parser, Allocator alloc, 
 			map.set(keys[i], values[i]);
 		}
 	}
-	parser.skip_until_struct_end();
 }

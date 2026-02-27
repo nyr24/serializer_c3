@@ -30,7 +30,7 @@ macro void Formatter.format_to_text(&f, val)
 {
 	var $ValType = $typeof(val);
 	SchemaFormatKind $root_fmt_kind = $ValType.has_tagof(SCHEMA_FMT_TAG) ??? $ValType.tagof(SCHEMA_FMT_TAG) : SchemaFormatKind.DEFAULT;
-	return f.format_any(val, $root_fmt_kind);
+	return f.format_any(val, $root_fmt_kind, 0, false);
 }
 
 macro void Formatter.format_any(

@@ -55,18 +55,18 @@ macro void List.deserialize_from_bin(&list, ChunkIterator* chunk_it, Allocator a
 	}
 }
 
-macro void List.serialize_to_text(&list, Serializer* ser, Allocator alloc)
+macro void List.serialize_to_text(&list, Serializer* ser, Allocator alloc, Newlines newlines = {true, true})
 {
 	var $ItemType = $typeof(*list.entries);
 	ListSerializedText ser_repr;
 	ser_repr.size = list.size;
 	ser_repr.capacity = list.capacity;
-	ser.serialize_to_text(ser_repr, alloc, false, ListSerializedText.sizeof);
+	ser.serialize_to_text(ser_repr, alloc, false, ListSerializedText.sizeof, {newlines.top, true});
 
 	if (list.size > 0) {
 		$ItemType[] entries = allocator::alloc_array(alloc, $ItemType, list.size);
 		mem::copy(entries.ptr, list.entries, list.size * $ItemType.sizeof);
-		ser.serialize_to_text(entries, alloc, true, list.size * $ItemType.sizeof);
+		ser.serialize_to_text(entries, alloc, true, list.size * $ItemType.sizeof, {false, newlines.bottom});
 	}
 }
 
@@ -146,7 +146,7 @@ fn void DString.deserialize_from_bin(&dstring, ChunkIterator* chunk_it, Allocato
 	*dstring = (DString)data;
 }
 
-fn void DString.serialize_to_text(&dstring, Serializer* ser, Allocator alloc)
+fn void DString.serialize_to_text(&dstring, Serializer* ser, Allocator alloc, Newlines newlines = {true, true})
 {
 	StringData* str_data = dstring.data();
 	DStringSerializedText ser_repr;
@@ -156,7 +156,7 @@ fn void DString.serialize_to_text(&dstring, Serializer* ser, Allocator alloc)
 	if (ser_repr.len > 0) {
 		mem::copy(ser_repr.chars.ptr, &str_data.chars, str_data.len);
 	}
-	ser.serialize_to_text(ser_repr, alloc, true, DStringSerializedText.sizeof + str_data.len * char.sizeof);
+	ser.serialize_to_text(ser_repr, alloc, true, DStringSerializedText.sizeof + str_data.len * char.sizeof, newlines);
 }
 
 <*
@@ -235,7 +235,7 @@ macro void HashMap.deserialize_from_bin(&map, ChunkIterator* chunk_it, Allocator
 	}
 }
 
-macro void HashMap.serialize_to_text(&map, Serializer* ser, Allocator alloc)
+macro void HashMap.serialize_to_text(&map, Serializer* ser, Allocator alloc, Newlines newlines = {true, true})
 {
 	var $KeyType = $typeof(map.table[0].key);
 	var $ValType = $typeof(map.table[0].value);
@@ -244,13 +244,13 @@ macro void HashMap.serialize_to_text(&map, Serializer* ser, Allocator alloc)
 	ser_map.count = map.count;
 	ser_map.threshold = map.threshold;
 	ser_map.load_factor = map.load_factor;
-	ser.serialize_to_text(ser_map, alloc, false, HashMapSerialized.sizeof);
+	ser.serialize_to_text(ser_map, alloc, false, HashMapSerialized.sizeof, {newlines.top, true});
 
 	if (ser_map.count > 0) {
 		$KeyType[] keys = map.keys(alloc);
 		$ValType[] vals = map.values(alloc);
-		ser.serialize_to_text(keys, alloc, true, $KeyType.sizeof * map.count);
-		ser.serialize_to_text(vals, alloc, true, $ValType.sizeof * map.count);
+		ser.serialize_to_text(keys, alloc, true, $KeyType.sizeof * map.count, {false, true});
+		ser.serialize_to_text(vals, alloc, true, $ValType.sizeof * map.count, {false, newlines.bottom});
 	}
 }
 

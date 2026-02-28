@@ -195,7 +195,7 @@ macro void Formatter.format_struct(
 	Newlines newlines = { false, false },
 ) @private
 {
-	String $base_indent_s = (String)@get_indent($indent_count);
+	String $base_indent_s = (String)get_indent($indent_count);
 	String $inner_indent_s = $base_indent_s +++ INDENT_SYMBOL;
 	var $Type = pointee_type_val(val);
 
@@ -270,7 +270,7 @@ macro void Formatter.format_array(
 	Newlines newlines = { false, false },
 ) @private
 {
-	String $indent_str = (String)@get_indent($indent_count);
+	String $indent_str = (String)get_indent($indent_count);
 
 	if (newlines.top)
 	{
@@ -309,7 +309,7 @@ macro void Formatter.format_primitive(
 	Newlines newlines = { false, false },
 ) @private
 {
-	String $indent_str = (String)@get_indent($indent_count);
+	String $indent_str = (String)get_indent($indent_count);
 
 	if (newlines.top)
 	{
@@ -345,7 +345,7 @@ macro void Formatter.format_string(
 	Newlines newlines = { false, false },
 ) @private
 {
-	String $indent_str = (String)@get_indent($indent_count);
+	String $indent_str = (String)get_indent($indent_count);
 
 	if (newlines.top)
 	{
@@ -376,7 +376,7 @@ macro void Formatter.format_vec(
 	Newlines newlines = { false, false },
 ) @private
 {
-	String $indent_str = (String)@get_indent($indent_count);
+	String $indent_str = (String)get_indent($indent_count);
 	String $vec_start = "[<";
 	String $vec_end = ">]";
 
@@ -419,7 +419,7 @@ macro void Formatter.format_mat(
 	Newlines newlines = { false, false },
 ) @private
 {
-	String $base_indent_s = (String)@get_indent($indent_count);
+	String $base_indent_s = (String)get_indent($indent_count);
 	String $inner_indent_s = $base_indent_s +++ INDENT_SYMBOL;
 	String $mat_start = "[#";
 	String $mat_end = "#]";
@@ -484,7 +484,7 @@ macro void Formatter.format_mat(
 	}
 }
 
-macro @get_indent(char $indent_count = 0) @local @const
+macro get_indent(char $indent_count = 0) @local @const
 {
 	String $indent_str;
 	$if $indent_count > 0:

@@ -33,7 +33,7 @@ struct Parser
 	usz curr_line;
 }
 
-enum TokenChar : const inline char
+constdef TokenChar : inline char
 {
 	ARRAY_START = '[',
 	ARRAY_END = ']',
@@ -49,7 +49,7 @@ enum TokenChar : const inline char
 	COMMA = ',',
 }
 
-enum BoolAsString : const inline char[]
+constdef BoolAsString : inline char[]
 {
 	TRUE = "true",
 	FALSE = "false",

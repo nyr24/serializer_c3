@@ -855,7 +855,7 @@ struct MathStruct
 
 fn void MathStruct.init(&self, int i)
 {
-	self.mat4 = math::IDENTITY4;
+	self.mat4 = matrix::IDENTITY4;
 	self.mat4.m11 = i;
 	self.vec4 = { 2, 2, 2, 8 };
 }

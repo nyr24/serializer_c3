@@ -564,7 +564,7 @@ fn void example_text_bitstruct(Serializer* serializer, bool should_write)
 
 // --- Constdef / Const enum ---
 
-enum Constant : const int
+constdef Constant : int
 {
 	CHAR = 1,
 	SHORT = 2,
@@ -855,7 +855,7 @@ struct MathStruct
 
 fn void MathStruct.init(&self, int i)
 {
-	self.mat4 = math::MATRIX4F_IDENTITY;
+	self.mat4 = math::IDENTITY4;
 	self.mat4.m11 = i;
 	self.vec4 = { 2, 2, 2, 8 };
 }

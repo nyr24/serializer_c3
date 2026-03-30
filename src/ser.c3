@@ -130,7 +130,7 @@ fn void append_bin_data_to_buff(
 	ser.write_serialized_chunk_to_buff(data);
 	if (should_free_memory)
 	{
-		allocator::free(alloc, &data);
+		alloc::free(alloc, &data);
 	}
 }
 
@@ -175,7 +175,7 @@ macro void Serializer.deserialize_from_bin(
 			$case SLICE:
 				mem::copy(val.ptr, raw_data.ptr, raw_data.len);
 		$endswitch
-		allocator::free(alloc, raw_data.ptr);
+		alloc::free(alloc, raw_data.ptr);
 	$endif
 }
 
@@ -196,7 +196,7 @@ fn char[] Serializer.acquire_bin_data_from_file(
 		FileHeader.sizeof + ChunkHeader.sizeof,
 		contents_len - ChunkHeader.sizeof
 	);
-	char[] data = allocator::alloc_array(alloc, char, buff_view.len);
+	char[] data = alloc::alloc_array(alloc, char, buff_view.len);
 	mem::copy(data.ptr, buff_view.ptr, buff_view.len);
 	ser.reset_state();
 	return data;
@@ -350,7 +350,7 @@ macro void append_text_data_to_buff(
 		$if $defined(data.free(alloc)):
 			data.free(alloc);
 		$else
-			allocator::free(alloc, &data);
+			alloc::free(alloc, &data);
 		$endif
 	}
 }

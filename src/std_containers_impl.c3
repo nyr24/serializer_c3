@@ -18,7 +18,7 @@ struct ListSerializedBin
 
 fn void ListSerializedBin.free(&ser_repr, Allocator alloc)
 {
-	allocator::free(alloc, &ser_repr);
+	alloc::free(alloc, &ser_repr);
 }
 
 struct ListSerializedText
@@ -30,7 +30,7 @@ struct ListSerializedText
 macro void List.serialize_to_bin(&list, Serializer* ser, Allocator alloc)
 {
 	usz entries_byte_size = list.byte_size();
-	char[] ser_repr_as_bytes = allocator::alloc_array(alloc, char, usz.sizeof * 2 + entries_byte_size);
+	char[] ser_repr_as_bytes = alloc::alloc_array(alloc, char, usz.sizeof * 2 + entries_byte_size);
 	ListSerializedBin* ser_repr = (ListSerializedBin*)ser_repr_as_bytes.ptr;
 	ser_repr.size = list.size;
 	ser_repr.capacity = list.capacity;
@@ -48,7 +48,7 @@ macro void List.deserialize_from_bin(&list, ChunkIterator* chunk_it, Allocator a
 	list.size = ser_repr.size;
 	list.capacity = ser_repr.capacity;
 	list.allocator = alloc;
-	list.entries = allocator::malloc(alloc, ser_repr.capacity * $ItemType.sizeof);
+	list.entries = alloc::malloc(alloc, ser_repr.capacity * $ItemType.sizeof);
 
 	if (ser_repr.size > 0) {
 		mem::copy(list.entries, &ser_repr.entries, ser_data.len - $offsetof(ser_repr.entries));
@@ -64,7 +64,7 @@ macro void List.serialize_to_text(&list, Serializer* ser, Allocator alloc, Newli
 	ser.serialize_to_text(ser_repr, alloc, false, ListSerializedText.sizeof, {newlines.top, true});
 
 	if (list.size > 0) {
-		$ItemType[] entries = allocator::alloc_array(alloc, $ItemType, list.size);
+		$ItemType[] entries = alloc::alloc_array(alloc, $ItemType, list.size);
 		mem::copy(entries.ptr, list.entries, list.size * $ItemType.sizeof);
 		ser.serialize_to_text(entries, alloc, true, list.size * $ItemType.sizeof, {false, newlines.bottom});
 	}
@@ -86,7 +86,7 @@ macro void List.deserialize_from_text(&list, Parser* parser, Allocator alloc, St
 
 	if (list.size > 0) {
 		parser.skip_until_next_value_start();
-		$ItemType[] entries = allocator::alloc_array(alloc, $ItemType, list.capacity);
+		$ItemType[] entries = alloc::alloc_array(alloc, $ItemType, list.capacity);
 		parser.parse_array(entries[:list.size]);
 		list.entries = entries.ptr;
 		list.allocator = alloc;
@@ -104,7 +104,7 @@ struct DStringSerializedBin
 
 fn void DStringSerializedBin.free(&ser_repr, Allocator alloc)
 {
-	allocator::free(alloc, &ser_repr);
+	alloc::free(alloc, &ser_repr);
 }
 
 struct DStringSerializedText @tag(ser::SCHEMA_FMT_TAG, SchemaFormatKind.STRING)
@@ -116,13 +116,13 @@ struct DStringSerializedText @tag(ser::SCHEMA_FMT_TAG, SchemaFormatKind.STRING)
 
 fn void DStringSerializedText.free(&ser_repr, Allocator alloc)
 {
-	allocator::free(alloc, ser_repr.chars.ptr);
+	alloc::free(alloc, ser_repr.chars.ptr);
 }
 
 fn void DString.serialize_to_bin(&dstring, Serializer* ser, Allocator alloc)
 {
 	StringData* str_data = dstring.data();
-	char[] ser_repr_as_bytes = allocator::alloc_array(alloc, char, usz.sizeof * 2 + str_data.len * char.sizeof);
+	char[] ser_repr_as_bytes = alloc::alloc_array(alloc, char, usz.sizeof * 2 + str_data.len * char.sizeof);
 	DStringSerializedBin* ser_repr = (DStringSerializedBin*)ser_repr_as_bytes.ptr;
 	ser_repr.len = str_data.len;
 	ser_repr.capacity = str_data.capacity;
@@ -136,7 +136,7 @@ fn void DString.deserialize_from_bin(&dstring, ChunkIterator* chunk_it, Allocato
 {
 	char[] ser_data = chunk_it.next();
 	DStringSerializedBin* ser_repr = (DStringSerializedBin*)ser_data.ptr;
-	StringData* data = allocator::alloc_with_padding(alloc, StringData, ser_repr.capacity)!!;
+	StringData* data = alloc::alloc_with_padding(alloc, StringData, ser_repr.capacity)!!;
 	data.allocator = alloc;
 	data.len = ser_repr.len;
 	data.capacity = ser_repr.capacity;
@@ -152,7 +152,7 @@ fn void DString.serialize_to_text(&dstring, Serializer* ser, Allocator alloc, Ne
 	DStringSerializedText ser_repr;
 	ser_repr.len = str_data.len;
 	ser_repr.capacity = str_data.capacity;
-	ser_repr.chars = allocator::alloc_array(alloc, char, str_data.len);
+	ser_repr.chars = alloc::alloc_array(alloc, char, str_data.len);
 	if (ser_repr.len > 0) {
 		mem::copy(ser_repr.chars.ptr, &str_data.chars, str_data.len);
 	}
@@ -172,7 +172,7 @@ fn void DString.deserialize_from_text(&dstring, Parser* parser, Allocator alloc,
 	parser.skip_until_next_value_start();
 	parser.parse_number(&capacity);
 
-	StringData* data = allocator::alloc_with_padding(alloc, StringData, capacity)!!;
+	StringData* data = alloc::alloc_with_padding(alloc, StringData, capacity)!!;
 	data.len = len;
 	data.capacity = capacity;
 	data.allocator = alloc;
@@ -222,7 +222,7 @@ macro void HashMap.deserialize_from_bin(&map, ChunkIterator* chunk_it, Allocator
 	map.threshold = ser_map.threshold;
 	map.load_factor = ser_map.load_factor;
 	map.allocator = alloc;
-	map.table = allocator::new_array(alloc, void*, (usz)(ser_map.threshold / ser_map.load_factor));
+	map.table = alloc::new_array(alloc, void*, (usz)(ser_map.threshold / ser_map.load_factor));
 
 	if (map.count > 0) {
 		$KeyType[] keys = from_byte_slice(chunk_it.next(), $KeyType[]);
@@ -271,11 +271,11 @@ macro void HashMap.deserialize_from_text(&map, Parser* parser, Allocator alloc, 
 	parser.parse_number(&map.load_factor);
 	parser.skip_until_struct_end();
 	map.allocator = alloc;
-	map.table = allocator::new_array(alloc, void*, (usz)(map.threshold / map.load_factor));
+	map.table = alloc::new_array(alloc, void*, (usz)(map.threshold / map.load_factor));
 
 	if (map.count > 0) {
-		$KeyType[] keys = allocator::alloc_array(alloc, $KeyType, map.count);
-		$ValType[] values = allocator::alloc_array(alloc, $ValType, map.count);
+		$KeyType[] keys = alloc::alloc_array(alloc, $KeyType, map.count);
+		$ValType[] values = alloc::alloc_array(alloc, $ValType, map.count);
 
 		parser.skip_until_next_value_start();
 		parser.parse_array(keys);

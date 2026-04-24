@@ -28,9 +28,9 @@ alias CommentString = ElasticArray {char, MAX_COMMENT_LEN};
 struct Parser
 {
 	char[] buff_view;
-	usz curr;
-	usz end;
-	usz curr_line;
+	sz curr;
+	sz end;
+	sz curr_line;
 }
 
 constdef TokenChar : inline char
@@ -66,7 +66,7 @@ fn void Parser.init(&parser, char[] data)
 
 fn void Parser.reset(&parser)
 {
-	mem::set(parser, 0, Parser.sizeof);
+	mem::set(parser, 0, Parser::size);
 }
 
 fn bool Parser.is_initialized(&parser)
@@ -96,9 +96,9 @@ macro void Parser.parse_curr_value_and_skip_to_next(
 macro void Parser.parse_recur_into(&parser, out_val)
 {
 	var $ValType = $typeof(out_val);
-	SchemaFormatKind $root_fmt_kind = $ValType.has_tagof(
+	SchemaFormatKind $root_fmt_kind = $ValType::has_tag(
 		SCHEMA_FMT_TAG
-	) ??? $ValType.tagof(SCHEMA_FMT_TAG) : SchemaFormatKind.DEFAULT;
+	) ??? $ValType::get_tag(SCHEMA_FMT_TAG) : SchemaFormatKind.DEFAULT;
 	parser.parse_any(out_val, $root_fmt_kind);
 }
 
@@ -119,12 +119,12 @@ macro void Parser.parse_any(
 	$endif
 
 	var $Type = $typeof(curr_val);
-	var $kind = $Type.kindof;
+	var $kind = $Type::kind;
 	bool $is_ptr = $kind == POINTER;
 
 	$if $is_ptr:
-		$Type = $Type.inner;
-		$kind = $Type.kindof;
+		$Type = $Type::inner;
+		$kind = $Type::kind;
 	$endif
 
 	$if $unwrap_distinct:
@@ -132,11 +132,11 @@ macro void Parser.parse_any(
 			$case TYPEDEF:
 			$case CONSTDEF:
 			$case BITSTRUCT:
-				$fmt_kind = $Type.has_tagof(
+				$fmt_kind = $Type::has_tag(
 					SCHEMA_FMT_TAG
-				) ??? $Type.tagof(SCHEMA_FMT_TAG) : $fmt_kind;
-				$Type = $Type.inner;
-				$kind = $Type.kindof;
+				) ??? $Type::get_tag(SCHEMA_FMT_TAG) : $fmt_kind;
+				$Type = $Type::inner;
+				$kind = $Type::kind;
 		$endswitch
 	$endif
 
@@ -208,7 +208,7 @@ macro void Parser.parse_any(
 }
 
 <*
- @require $typeof(out_value).kindof == POINTER : "Should be a pointer"
+ @require $typeof(out_value)::kind == POINTER : "Should be a pointer"
  @require parser.curr_char() == TokenChar.STRUCT_START : "Should be at the start of struct"
 *>
 macro void Parser.parse_struct(
@@ -223,18 +223,18 @@ macro void Parser.parse_struct(
 	var $RootType = $typeof(out_value);
 	var $Type = pointee_type_val(out_value);
 
-	$foreach $mem : $Type.membersof:
-		var $name = $mem.nameof;
+	$foreach $mem : $Type::members:
+		var $name = $mem.name;
 		$if $name.len:
-			bool $is_distinct = $mem.kindof == TYPEDEF;
-			$fmt_kind = $mem.has_tagof(
+			bool $is_distinct = $mem.type.kind == TYPEDEF;
+			$fmt_kind = $mem.type.has_tag(
 				SCHEMA_FMT_TAG
-			) ??? $mem.tagof(SCHEMA_FMT_TAG) : $fmt_kind;
+			) ??? $mem.type.get_tag(SCHEMA_FMT_TAG) : $fmt_kind;
 
 			$if $is_distinct:
 				parser.parse_any(&out_value.$eval($name), $fmt_kind, true);
 			$else
-				$if $mem.kindof == ARRAY:
+				$if $mem.type.kind == ARRAY:
 					$switch:
 						// NOTE: ElasticArray special case
 						$case $defined ( out_value.array_view() ):
@@ -354,7 +354,7 @@ macro void Parser.parse_mat(&parser, out_mat)
 *>
 fn void Parser.parse_boolean(&parser, bool* out_bool)
 {
-	usz start = parser.curr;
+	sz start = parser.curr;
 	char[] bool_value = parser.read_until_value_end();
 	assert (bool_value.len > 0 , "Should move at least 1 character");
 	assert (bool_value.len
@@ -375,9 +375,9 @@ fn void Parser.parse_boolean(&parser, bool* out_bool)
 }
 
 
-// @require is_kindof($typeof(out_value).inner, UNSIGNED_INT, SIGNED_INT, FLOAT, CONSTDEF, TYPEDEF) : "Should be of number type"
+// @require is_kindof($typeof(out_value)::inner, UNSIGNED_INT, SIGNED_INT, FLOAT, CONSTDEF, TYPEDEF) : "Should be of number type"
 <*
- @require $typeof(out_value).kindof == POINTER : "Should be a pointer"
+ @require $typeof(out_value)::kind == POINTER : "Should be a pointer"
  @require parser.curr_char().is_digit() || is_digit_sign(parser.curr_char()) : "Character we currently on should be either a digit or a sign"
 *>
 macro void Parser.parse_number(&parser, out_value)
@@ -389,14 +389,14 @@ macro void Parser.parse_number(&parser, out_value)
 	var $Type = pointee_type_val(out_value);
 	var $InnerType = innermost_type($Type);
 
-	$switch $InnerType.sizeof:
-		$case char.sizeof:$case short.sizeof:$case int.sizeof:
+	$switch $InnerType::size:
+		$case char::size:$case short::size:$case int::size:
 			$if types::is_int($InnerType):
 				*out_value = ($Type)($InnerType)libc::atoi(digit_as_chars);
 			$else
 				*out_value = ($Type)libc::strtof(digit_as_chars, null);
 			$endif
-		$case long.sizeof:
+		$case long::size:
 			$if types::is_int($InnerType):
 				*out_value = ($Type)($InnerType)libc::atoll(digit_as_chars);
 			$else
@@ -410,7 +410,7 @@ macro void Parser.parse_number(&parser, out_value)
 }
 
 <*
- @require $typeof(out_value).kindof == POINTER : "Should be a pointer"
+ @require $typeof(out_value)::kind == POINTER : "Should be a pointer"
  @require parser.curr_char().is_digit() : "Character we currently on should be either a digit or a sign"
 *>
 macro void Parser.parse_enum(&parser, out_value)
@@ -420,21 +420,21 @@ macro void Parser.parse_enum(&parser, out_value)
 	char[] digit_as_chars = digit_buff.array_view();
 
 	var $EnumType = pointee_type_val(out_value);
-	var $OrdinalType = $EnumType.inner;
+	var $OrdinalType = $EnumType::inner;
 
-	$switch ($OrdinalType.sizeof):
-		$case char.sizeof:$case short.sizeof:$case int.sizeof:
-			*out_value = $EnumType.from_ordinal(
+	$switch ($OrdinalType::size):
+		$case char::size:$case short::size:$case int::size:
+			*out_value = $EnumType::from_ordinal(
 				($OrdinalType)libc::atoi(digit_as_chars)
 			);
-		$case long.sizeof:
+		$case long::size:
 			*out_value = $EnumType.from_ordinal(
 				($OrdinalType)libc::atoll(digit_as_chars)
 			);
 		$default:
 			unreachable(
 				"Unknown size of type of plain enum: %d",
-				$OrdinalType.sizeof
+				$OrdinalType::size
 			);
 	$endswitch
 }
@@ -472,7 +472,7 @@ fn void parse_num_private(
 	ElasticArray {char, MAX_DIGIT_LEN}* digit_buff
 ) @local
 {
-	usz start = parser.curr;
+	sz start = parser.curr;
 	bool is_digit = false;
 	bool was_dot = false;
 
@@ -563,7 +563,7 @@ fn bool Parser.skip_line(&parser)
 
 fn char[] Parser.read_until_value_end(&parser)
 {
-	usz start = parser.curr;
+	sz start = parser.curr;
 	parser.skip_until_curr_char_cb(&is_space_or_comma);
 	return parser.buff_view[start:parser.curr - start];
 }
@@ -590,7 +590,7 @@ fn bool Parser.skip_until_next_value_start(&parser)
 
 fn char[] Parser.read_until_curr_char(&parser, char c)
 {
-	usz start = parser.curr;
+	sz start = parser.curr;
 	while (parser.curr < parser.end && parser.curr_char() != c)
 	{
 		parser.step();
@@ -636,7 +636,7 @@ fn void Parser.skip_until_curr_char_cb(&parser, SkipCallback cb)
 
 fn char[] Parser.read_until_curr_char_cb(&parser, SkipCallback cb)
 {
-	usz start = parser.curr;
+	sz start = parser.curr;
 	while (parser.curr < parser.end && !cb(parser.curr_char()))
 	{
 		parser.step();
@@ -646,7 +646,7 @@ fn char[] Parser.read_until_curr_char_cb(&parser, SkipCallback cb)
 
 fn char[] Parser.read_while_curr_char_cb(&parser, SkipCallback cb)
 {
-	usz start = parser.curr;
+	sz start = parser.curr;
 	while (parser.curr < parser.end && cb(parser.curr_char()))
 	{
 		parser.step();
@@ -656,10 +656,10 @@ fn char[] Parser.read_while_curr_char_cb(&parser, SkipCallback cb)
 
 fn void Parser.debug_view(
 	&parser,
-	usz len = 50
+	sz len = 50
 ) @if(env::COMPILER_OPT_LEVEL.ordinal == 0)
 {
-	len = math::min(len, (usz)(parser.end - parser.curr + 1));
+	len = math::min(len, (sz)(parser.end - parser.curr + 1));
 	io::printfn(
 		"Parser: closest values in buffer:\n%s",
 		(String)parser.buff_view[parser.curr:len]
@@ -689,7 +689,7 @@ fn void Parser.step_n(&parser, uint count) @inline
 	parser.curr += count;
 }
 
-fn usz Parser.remain_dist(&parser) @inline
+fn sz Parser.remain_dist(&parser) @inline
 {
 	return parser.end - parser.curr;
 }

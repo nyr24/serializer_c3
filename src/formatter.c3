@@ -34,9 +34,9 @@ struct Newlines
 macro void Formatter.format_to_text(&f, val, Newlines newlines = { true, true })
 {
 	var $ValType = $typeof(val);
-	SchemaFormatKind $root_fmt_kind = $ValType.has_tagof(
+	SchemaFormatKind $root_fmt_kind = $ValType::has_tag(
 		SCHEMA_FMT_TAG
-	) ??? $ValType.tagof(SCHEMA_FMT_TAG) : SchemaFormatKind.DEFAULT;
+	) ??? $ValType::get_tag(SCHEMA_FMT_TAG) : SchemaFormatKind.DEFAULT;
 	return f.format_any(val, $root_fmt_kind, 0, false, newlines);
 }
 
@@ -50,22 +50,22 @@ macro void Formatter.format_any(
 ) @private
 {
 	var $Type = $typeof(curr_val);
-	var $kind = $Type.kindof;
+	var $kind = $Type::kind;
 	bool $need_cast = false;
 
 	$if $kind == POINTER:
-		$Type = $Type.inner;
-		$kind = $Type.kindof;
+		$Type = $Type::inner;
+		$kind = $Type::kind;
 	$endif
 
 	$if $unwrap_distinct:
 		$switch ($kind):
 			$case TYPEDEF:$case CONSTDEF:$case BITSTRUCT:
-				$fmt_kind = $Type.has_tagof(
+				$fmt_kind = $Type::has_tag(
 					SCHEMA_FMT_TAG
-				) ??? $Type.tagof(SCHEMA_FMT_TAG) : $fmt_kind;
-				$Type = $Type.inner;
-				$kind = $Type.kindof;
+				) ??? $Type::get_tag(SCHEMA_FMT_TAG) : $fmt_kind;
+				$Type = $Type::inner;
+				$kind = $Type::kind;
 				$need_cast = true;
 		$endswitch
 	$endif
@@ -208,19 +208,19 @@ macro void Formatter.format_struct(
 		f.print($base_indent_s +++ "{\n")!!;
 	}
 
-	$for var $i = 0; $i < $Type.membersof.len; ++$i:
-		var $member = $Type.membersof[$i];
-		var $name = $member.nameof;
+	$for var $i = 0; $i < $Type::members.len; ++$i:
+		var $member = $Type::members[$i];
+		var $name = $member.name;
 
 		$if $i > 0:
 			f.print(",\n")!!;
 		$endif
 		$if $name != "":
 			f.printf($inner_indent_s +++ "; %s\n", $name)!!;
-			var $mem_kind = $member.kindof;
-			$fmt_kind = $member.has_tagof(
+			var $mem_kind = $member.type.kind;
+			$fmt_kind = $member.has_tag(
 				SCHEMA_FMT_TAG
-			) ??? $member.tagof(SCHEMA_FMT_TAG) : $fmt_kind;
+			) ??? $member.get_tag(SCHEMA_FMT_TAG) : $fmt_kind;
 
 			$switch:
 				// NOTE: ElasticArray special case

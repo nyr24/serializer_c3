@@ -17,9 +17,9 @@ import std::collections::list;
 
 const usz FILE_FORMAT_ID_BIN @private = 0x123456789abcdeff;
 const usz FILE_FORMAT_ID_TXT @private = 0x123456789abcdeaa;
-const usz CHUNK_ID @private = 0xffedcba987654321;
+const CHUNK_ID @private = 0xffedcba987654321;
 const usz DEFAULT_BUFF_CAPACITY @private = 4096u;
-const usz ALIGNMENT @private = uptr.alignof;
+const usz ALIGNMENT @private = uptr::alignment;
 const String BIN_EXT = ".bin";
 const String TEXT_EXT = ".txt";
 
@@ -169,7 +169,7 @@ macro void Serializer.deserialize_from_bin(
 		val.deserialize_from_bin(&ser.chunk_it, alloc);
 	$else
 		char[] raw_data = ser.acquire_bin_data_from_file(alloc, file_path);
-		$switch $kindof (val):
+		$switch @kindof(val):
 			$case POINTER:
 				mem::copy(val, raw_data.ptr, raw_data.len);
 			$case SLICE:
@@ -193,8 +193,8 @@ fn char[] Serializer.acquire_bin_data_from_file(
 {
 	usz contents_len = read_file_into_buffer(ser, BIN, file_path);
 	char[] buff_view = ser.buff.view_range_len(
-		FileHeader.sizeof + ChunkHeader.sizeof,
-		contents_len - ChunkHeader.sizeof
+		FileHeader::size + ChunkHeader::size,
+		contents_len - ChunkHeader::size
 	);
 	char[] data = alloc::alloc_array(alloc, char, buff_view.len);
 	mem::copy(data.ptr, buff_view.ptr, buff_view.len);
@@ -228,14 +228,14 @@ fn void ChunkIterator.init(&chunk_it, List {char}* buff, usz contents_len)
 {
 	chunk_it.buff_view = buff.view_range_len(
 		0,
-		FileHeader.sizeof + contents_len
+		FileHeader::size + contents_len
 	);
-	chunk_it.offset = FileHeader.sizeof;
+	chunk_it.offset = FileHeader::size;
 }
 
 fn void ChunkIterator.reset(&chunk_it)
 {
-	mem::set(chunk_it, 0, ChunkIterator.sizeof);
+	mem::set(chunk_it, 0, ChunkIterator::size);
 }
 
 fn bool ChunkIterator.is_initialized(&chunk_it)
@@ -267,7 +267,7 @@ fn void ChunkIterator.read_chunk_header_and_move_offset(
 	ChunkHeader* header = (ChunkHeader*)(it.buff_view.ptr + it.offset);
 	assert (header.chunk_id == CHUNK_ID , "Should be identifiable as chunk");
 	*out_header = *header;
-	it.offset += ChunkHeader.sizeof;
+	it.offset += ChunkHeader::size;
 }
 
 // Serialization Text
@@ -325,12 +325,12 @@ macro void append_text_data_to_buff(
 	data,
 	Allocator alloc,
 	bool should_free_memory = false,
-	usz assumed_serialized_data_size = 0,
+	sz assumed_serialized_data_size = 0,
 	Newlines newlines = { true, true },
 ) @private
 {
 	assumed_serialized_data_size = math::max(
-		$sizeof (data),
+		$reflect(data).size,
 		assumed_serialized_data_size
 	);
 	usz assumed_req_capacity = calc_required_capacity_text(
@@ -405,7 +405,7 @@ fn usz read_file_into_buffer(
 {
 	File file = file::open_read(file_path, mode);
 	defer (void)file.close();
-	usz file_len = file.get_len();
+	usz file_len = file.size()!!;
 	ser.buff.reserve(file_len);
 	ser.buff.resize(file_len);
 
@@ -421,7 +421,7 @@ fn usz read_file_into_buffer(
 	if (mode == TEXT)
 	{
 		ser.parser.init(
-			ser.buff.view_range_len(FileHeader.sizeof, header.contents_len)
+			ser.buff.view_range_len(FileHeader::size, header.contents_len)
 		);
 	}
 
@@ -469,11 +469,11 @@ fn usz write_chunk_header(Serializer* ser, usz chunk_size) @private
 	ChunkHeader header;
 	header.chunk_id = CHUNK_ID;
 	uint chunk_with_header_common_aligned_size = (uint)mem::aligned_offset(
-		chunk_size + ChunkHeader.sizeof,
+		chunk_size + ChunkHeader::size,
 		ALIGNMENT
 	);
 	header.aligned_size = chunk_with_header_common_aligned_size
-		- ChunkHeader.sizeof;
+		- ChunkHeader::size;
 	header.padding = header.aligned_size - (uint)chunk_size;
 	char[] header_as_bytes = to_byte_slice(&header);
 
@@ -485,21 +485,21 @@ fn usz write_chunk_header(Serializer* ser, usz chunk_size) @private
 fn void update_file_contents_len_with_curr_offset(Serializer* ser) @private
 {
 	FileHeader* file_header = (FileHeader*)&ser.buff[0];
-	file_header.contents_len = (uint)ser.buff.size - FileHeader.sizeof;
+	file_header.contents_len = (uint)ser.buff.size - FileHeader::size;
 }
 
 fn usz calc_required_capacity_bin(Serializer* ser, usz data_len) @private
 {
 	bool first_chunk = ser.buff.size == 0;
 	usz aligned_len = mem::aligned_offset(data_len, ALIGNMENT);
-	return first_chunk ? aligned_len + FileHeader.sizeof
-		+ ChunkHeader.sizeof : aligned_len + ChunkHeader.sizeof;
+	return first_chunk ? aligned_len + FileHeader::size
+		+ ChunkHeader::size : aligned_len + ChunkHeader::size;
 }
 
 fn usz calc_required_capacity_text(Serializer* ser, usz data_len) @private
 {
 	usz aligned_len = mem::aligned_offset(data_len, ALIGNMENT);
-	return aligned_len + FileHeader.sizeof;
+	return aligned_len + FileHeader::size;
 }
 
 macro String acquire_file_fmt_name(String $base_name, SerializationMode mode)

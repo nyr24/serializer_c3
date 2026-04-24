@@ -290,7 +290,7 @@ fn void example_text_simple(Serializer* serializer, bool should_write)
 			tmem,
 			f_name,
 			false,
-			$sizeof (St) * s_ces.len
+			St::size * s_ces.len
 		);
 	}
 
@@ -325,7 +325,7 @@ fn void example_text_math(Serializer* serializer, bool should_write)
 			tmem,
 			f_name,
 			false,
-			$sizeof (St) * vals.len
+			St::size * vals.len
 		);
 	}
 
@@ -360,7 +360,7 @@ fn void example_text_list(Serializer* serializer, bool should_write)
 			tmem,
 			f_name,
 			false,
-			$sizeof (St) * 4
+			St::size * 4
 		);
 	}
 
@@ -386,7 +386,7 @@ fn void example_text_dstring(Serializer* serializer, bool should_write)
 			&dstring,
 			tmem,
 			false,
-			$sizeof (dstring.data()) + dstring.len()
+			$reflect(dstring.data()).size + dstring.len()
 		);
 		serializer.save_serialized_data_to_file(f_name, TEXT);
 	}
@@ -419,7 +419,7 @@ fn void example_text_hashmap(Serializer* serializer, bool should_write)
 			tmem,
 			f_name,
 			false,
-			$sizeof (*map.table[0]) * keys.len
+			$reflect(*map.table[0]).size * keys.len
 		);
 	}
 
@@ -524,7 +524,7 @@ fn void example_text_diff_formats(Serializer* serializer, bool should_write)
 			tmem,
 			f_name,
 			false,
-			$sizeof (diff_fmt)
+			$reflect(diff_fmt).size
 		);
 	}
 
@@ -713,14 +713,14 @@ fn void Entity.serialize_to_text(
 		&entity.job_name,
 		alloc,
 		false,
-		entity.job_name.capacity() * char.sizeof,
+		entity.job_name.capacity() * char::size,
 		{ false, true }
 	);
 	ser.serialize_to_text(
 		&entity.map,
 		alloc,
 		false,
-		entity.map.threshold * $sizeof (*entity.map.table[0]),
+		entity.map.threshold * $reflect(*entity.map.table[0]).size,
 		{ false, true }
 	);
 }
@@ -793,9 +793,9 @@ fn void St.init(
 	new.inner.init(inner_name, inner_type);
 }
 
-fn usz? St.to_format(&s, Formatter* f) @dynamic
+fn sz? St.to_format(&s, Formatter* f) @dynamic
 {
-	usz sz = f.printf(
+	sz total = f.printf(
 		"\n\tSt: %s %d %f %s ",
 		(String)s.name.array_view(),
 		s.age,
@@ -803,7 +803,7 @@ fn usz? St.to_format(&s, Formatter* f) @dynamic
 		s.is_married
 	)!;
 	s.inner.print();
-	return sz;
+	return total;
 }
 
 fn void St.print(&s)

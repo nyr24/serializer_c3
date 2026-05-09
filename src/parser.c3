@@ -1,7 +1,7 @@
 module ser;
 
 import libc;
-import std::collections::elastic_array;
+import std::collections::fixedlist;
 import util;
 import std::math;
 import std::io;
@@ -10,7 +10,7 @@ const MAX_STR_LEN = 64;
 const MAX_DIGIT_LEN = 32;
 const MAX_COMMENT_LEN = 64;
 alias SkipCallback = fn bool(char);
-alias CommentString = ElasticArray {char, MAX_COMMENT_LEN};
+alias CommentString = FixedList{char, MAX_COMMENT_LEN};
 
 /* Example format
 	; field_name
@@ -95,7 +95,7 @@ macro void Parser.parse_curr_value_and_skip_to_next(
 *>
 macro void Parser.parse_recur_into(&parser, out_val)
 {
-	var $ValType = $typeof(out_val);
+	var $ValType = $Typeof(out_val);
 	SchemaFormatKind $root_fmt_kind = $ValType::has_tag(
 		SCHEMA_FMT_TAG
 	) ??? $ValType::get_tag(SCHEMA_FMT_TAG) : SchemaFormatKind.DEFAULT;
@@ -118,7 +118,7 @@ macro void Parser.parse_any(
 		}
 	$endif
 
-	var $Type = $typeof(curr_val);
+	var $Type = $Typeof(curr_val);
 	var $kind = $Type::kind;
 	bool $is_ptr = $kind == POINTER;
 
@@ -208,7 +208,7 @@ macro void Parser.parse_any(
 }
 
 <*
- @require $typeof(out_value)::kind == POINTER : "Should be a pointer"
+ @require $reflect(out_value).type.kind == POINTER : "Should be a pointer"
  @require parser.curr_char() == TokenChar.STRUCT_START : "Should be at the start of struct"
 *>
 macro void Parser.parse_struct(
@@ -220,7 +220,7 @@ macro void Parser.parse_struct(
 	parser.step();
 	assert (!parser.is_at_end() , "Shouldn't be at the end here");
 
-	var $RootType = $typeof(out_value);
+	var $RootType = $Typeof(out_value);
 	var $Type = pointee_type_val(out_value);
 
 	$foreach $mem : $Type::members:
@@ -236,7 +236,7 @@ macro void Parser.parse_struct(
 			$else
 				$if $mem.type.kind == ARRAY:
 					$switch:
-						// NOTE: ElasticArray special case
+						// NOTE: FixedList special case
 						$case $defined ( out_value.array_view() ):
 							parser.parse_any(out_value.array_view(), $fmt_kind);
 							// NOTE: DString special case
@@ -259,7 +259,7 @@ macro void Parser.parse_struct(
 }
 
 <*
- @require is_kindof($typeof(out_array), SLICE, POINTER, TYPEDEF) : "Should be a slice or pointer to array"
+ @require is_kindof($Typeof(out_array), SLICE, POINTER, TYPEDEF) : "Should be a slice or pointer to array"
  @require parser.curr_char() == TokenChar.ARRAY_START : "Should be at the start of array"
 *>
 macro void Parser.parse_array(
@@ -374,15 +374,13 @@ fn void Parser.parse_boolean(&parser, bool* out_bool)
 	}
 }
 
-
-// @require is_kindof($typeof(out_value)::inner, UNSIGNED_INT, SIGNED_INT, FLOAT, CONSTDEF, TYPEDEF) : "Should be of number type"
 <*
- @require $typeof(out_value)::kind == POINTER : "Should be a pointer"
+ @require $reflect(out_value).type.kind == POINTER : "Should be a pointer"
  @require parser.curr_char().is_digit() || is_digit_sign(parser.curr_char()) : "Character we currently on should be either a digit or a sign"
 *>
 macro void Parser.parse_number(&parser, out_value)
 {
-	ElasticArray {char, MAX_DIGIT_LEN} digit_buff;
+	FixedList {char, MAX_DIGIT_LEN} digit_buff;
 	parse_num_private(parser, &digit_buff);
 	char[] digit_as_chars = digit_buff.array_view();
 
@@ -410,12 +408,12 @@ macro void Parser.parse_number(&parser, out_value)
 }
 
 <*
- @require $typeof(out_value)::kind == POINTER : "Should be a pointer"
+ @require $reflect(out_value).type.kind == POINTER : "Should be a pointer"
  @require parser.curr_char().is_digit() : "Character we currently on should be either a digit or a sign"
 *>
 macro void Parser.parse_enum(&parser, out_value)
 {
-	ElasticArray {char, MAX_DIGIT_LEN} digit_buff;
+	FixedList {char, MAX_DIGIT_LEN} digit_buff;
 	parse_num_private(parser, &digit_buff);
 	char[] digit_as_chars = digit_buff.array_view();
 
@@ -469,7 +467,7 @@ fn char[] Parser.read_comment(&parser, CommentString* out_comment_value)
 
 fn void parse_num_private(
 	Parser* parser,
-	ElasticArray {char, MAX_DIGIT_LEN}* digit_buff
+	FixedList {char, MAX_DIGIT_LEN}* digit_buff
 ) @local
 {
 	sz start = parser.curr;

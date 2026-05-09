@@ -42,7 +42,7 @@ macro void List.serialize_to_bin(&list, Serializer* ser, Allocator alloc)
 
 macro void List.deserialize_from_bin(&list, ChunkIterator* chunk_it, Allocator alloc)
 {
-	var $ItemType = $typeof(*list.entries);
+	var $ItemType = $Typeof(*list.entries);
 	char[] ser_data = chunk_it.next();
 	ListSerializedBin* ser_repr = (ListSerializedBin*)ser_data.ptr;
 	list.size = ser_repr.size;
@@ -57,7 +57,7 @@ macro void List.deserialize_from_bin(&list, ChunkIterator* chunk_it, Allocator a
 
 macro void List.serialize_to_text(&list, Serializer* ser, Allocator alloc, Newlines newlines = {true, true})
 {
-	var $ItemType = $typeof(*list.entries);
+	var $ItemType = $Typeof(*list.entries);
 	ListSerializedText ser_repr;
 	ser_repr.size = list.size;
 	ser_repr.capacity = list.capacity;
@@ -75,7 +75,7 @@ macro void List.serialize_to_text(&list, Serializer* ser, Allocator alloc, Newli
 *>
 macro void List.deserialize_from_text(&list, Parser* parser, Allocator alloc, String file_path)
 {
-	var $ItemType = $typeof(*list.entries);
+	var $ItemType = $Typeof(*list.entries);
 	parser.step();
 	parser.skip_until_next_value_start();
 	parser.parse_number(&list.size);
@@ -187,15 +187,15 @@ fn void DString.deserialize_from_text(&dstring, Parser* parser, Allocator alloc,
 
 struct HashMapSerialized
 {
-	uint    	count;
-	uint    	threshold;
+	int    	count;
+	int    	threshold;
 	float   	load_factor;
 }
 
 macro void HashMap.serialize_to_bin(&map, Serializer* ser, Allocator alloc)
 {
-	var $KeyType = $typeof(map.table[0].key);
-	var $ValType = $typeof(map.table[0].value);
+	var $KeyType = $Typeof(map.table[0].key);
+	var $ValType = $Typeof(map.table[0].value);
 
 	HashMapSerialized ser_map;
 	ser_map.count = map.count;
@@ -213,8 +213,8 @@ macro void HashMap.serialize_to_bin(&map, Serializer* ser, Allocator alloc)
 
 macro void HashMap.deserialize_from_bin(&map, ChunkIterator* chunk_it, Allocator alloc)
 {
-	var $KeyType = $typeof(map.table[0].key);
-	var $ValType = $typeof(map.table[0].value);
+	var $KeyType = $Typeof(map.table[0].key);
+	var $ValType = $Typeof(map.table[0].value);
 
 	HashMapSerialized* ser_map = (HashMapSerialized*)chunk_it.next().ptr;
 	map.allocator = alloc;
@@ -229,7 +229,7 @@ macro void HashMap.deserialize_from_bin(&map, ChunkIterator* chunk_it, Allocator
 		$ValType[] values = from_byte_slice(chunk_it.next(), $ValType[]);
 		assert(keys.len == values.len, "Should be equal");
 
-		for (uint i; i < keys.len; ++i) {
+		for (int i; i < keys.len; ++i) {
 			map.set(keys[i], values[i]);
 		}
 	}
@@ -237,8 +237,8 @@ macro void HashMap.deserialize_from_bin(&map, ChunkIterator* chunk_it, Allocator
 
 macro void HashMap.serialize_to_text(&map, Serializer* ser, Allocator alloc, Newlines newlines = {true, true})
 {
-	var $KeyType = $typeof(map.table[0].key);
-	var $ValType = $typeof(map.table[0].value);
+	var $KeyType = $Typeof(map.table[0].key);
+	var $ValType = $Typeof(map.table[0].value);
 
 	HashMapSerialized ser_map;
 	ser_map.count = map.count;
@@ -259,8 +259,8 @@ macro void HashMap.serialize_to_text(&map, Serializer* ser, Allocator alloc, New
 *>
 macro void HashMap.deserialize_from_text(&map, Parser* parser, Allocator alloc, String file_path)
 {
-	var $KeyType = $typeof(map.table[0].key);
-	var $ValType = $typeof(map.table[0].value);
+	var $KeyType = $Typeof(map.table[0].key);
+	var $ValType = $Typeof(map.table[0].value);
 
 	parser.step();
 	parser.skip_until_next_value_start();
@@ -282,7 +282,7 @@ macro void HashMap.deserialize_from_text(&map, Parser* parser, Allocator alloc, 
 		parser.skip_until_next_value_start();
 		parser.parse_array(values);
 
-		for (uint i = 0; i < keys.len; ++i) {
+		for (int i = 0; i < keys.len; ++i) {
 			map.set(keys[i], values[i]);
 		}
 	}

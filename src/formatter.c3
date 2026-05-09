@@ -27,13 +27,12 @@ struct Newlines
 }
 
 <*
- Infers type from the passed value
-	Provides high level wrapper for 'format_any'
-	Should be used as entry-point
+ Infers type from the passed value, provides high level wrapper for 'format_any'.
+ Should be used as entry-point
 *>
 macro void Formatter.format_to_text(&f, val, Newlines newlines = { true, true })
 {
-	var $ValType = $typeof(val);
+	var $ValType = $Typeof(val);
 	SchemaFormatKind $root_fmt_kind = $ValType::has_tag(
 		SCHEMA_FMT_TAG
 	) ??? $ValType::get_tag(SCHEMA_FMT_TAG) : SchemaFormatKind.DEFAULT;
@@ -47,9 +46,9 @@ macro void Formatter.format_any(
 	char $indent_count = 0,
 	bool $unwrap_distinct = false,
 	Newlines newlines = { false, false },
-) @private
+)
 {
-	var $Type = $typeof(curr_val);
+	var $Type = $Typeof(curr_val);
 	var $kind = $Type::kind;
 	bool $need_cast = false;
 
@@ -193,7 +192,7 @@ macro void Formatter.format_struct(
 	SchemaFormatKind $fmt_kind = DEFAULT,
 	char $indent_count = 0,
 	Newlines newlines = { false, false },
-) @private
+)
 {
 	String $base_indent_s = (String)get_indent($indent_count);
 	String $inner_indent_s = $base_indent_s +++ INDENT_SYMBOL;
@@ -223,7 +222,7 @@ macro void Formatter.format_struct(
 			) ??? $member.get_tag(SCHEMA_FMT_TAG) : $fmt_kind;
 
 			$switch:
-				// NOTE: ElasticArray special case
+				// NOTE: FixedList special case
 				$case $mem_kind == ARRAY && $defined ( val.array_view() ):
 					f.format_any(
 						val.array_view(),
@@ -268,7 +267,7 @@ macro void Formatter.format_array(
 	SchemaFormatKind $fmt_kind = DEFAULT,
 	char $indent_count = 0,
 	Newlines newlines = { false, false },
-) @private
+)
 {
 	String $indent_str = (String)get_indent($indent_count);
 
@@ -307,7 +306,7 @@ macro void Formatter.format_primitive(
 	TypeKind $kind,
 	char $indent_count = 0,
 	Newlines newlines = { false, false },
-) @private
+)
 {
 	String $indent_str = (String)get_indent($indent_count);
 
@@ -343,7 +342,7 @@ macro void Formatter.format_string(
 	val,
 	char $indent_count = 0,
 	Newlines newlines = { false, false },
-) @private
+)
 {
 	String $indent_str = (String)get_indent($indent_count);
 
@@ -374,7 +373,7 @@ macro void Formatter.format_vec(
 	vec,
 	char $indent_count = 0,
 	Newlines newlines = { false, false },
-) @private
+)
 {
 	String $indent_str = (String)get_indent($indent_count);
 	String $vec_start = "[<";
@@ -417,7 +416,7 @@ macro void Formatter.format_mat(
 	mat,
 	char $indent_count = 0,
 	Newlines newlines = { false, false },
-) @private
+)
 {
 	String $base_indent_s = (String)get_indent($indent_count);
 	String $inner_indent_s = $base_indent_s +++ INDENT_SYMBOL;
@@ -433,7 +432,7 @@ macro void Formatter.format_mat(
 		f.print($base_indent_s +++ $mat_start +++ "\n")!!;
 	}
 
-	uint cols = 2;
+	sz cols = 2;
 
 	switch (mat.len)
 	{
@@ -449,11 +448,11 @@ macro void Formatter.format_mat(
 				mat.len
 			);
 	}
-	uint rows = cols;
+	sz rows = cols;
 
-	for (uint x = 0; x < rows; ++x)
+	for (sz x = 0; x < rows; ++x)
 	{
-		for (uint y = 0; y < cols; ++y)
+		for (sz y = 0; y < cols; ++y)
 		{
 			if (y == 0)
 			{

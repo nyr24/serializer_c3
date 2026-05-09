@@ -3,7 +3,7 @@ module ser;
 import util;
 import std::io;
 import std::math;
-import std::collections::elastic_array;
+import std::collections::fixedlist;
 import std::collections::list;
 import std::collections::map;
 
@@ -207,7 +207,7 @@ fn void example_bin_list(Serializer* serializer, bool should_write)
 	l_ints.tinit(100);
 	defer l_ints.free();
 
-	for (uint i = 0; i < 50; ++i)
+	for (int i = 0; i < 50; ++i)
 	{
 		l_ints.push(i);
 	}
@@ -750,7 +750,7 @@ fn void Entity.deserialize_from_text(
 
 // Type definitions
 
-alias StackString = ElasticArray {char, 32};
+alias StackString = FixedList {char, 32};
 
 // Mark type to treat it as string, not array of bytes and format differently
 struct St (Printable)

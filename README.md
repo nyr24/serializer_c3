@@ -24,7 +24,7 @@
 ## Examples
 ```cpp
 
-alias StackString = ElasticArray{char, 32};
+alias StackString = FixedList{char, 32};
 
 struct St
 {
